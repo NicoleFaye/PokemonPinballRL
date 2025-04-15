@@ -57,7 +57,6 @@ Core_Dump_*
 *.gb*.ram
 *.gb*.rtc
 /test_roms/
-*[0-9a-f]{6}.m?d
 test_data.encrypted
 *.lock
 tetris/
@@ -80,7 +79,8 @@ PyBoy-RL/
 /site-packages
 /share
 
-
+# ignore hashed temp markdown files
+*??????.m?
 
 .vscode/
 
