@@ -1,0 +1,88 @@
+# macOS
+.DS_Store
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# C extensions
+*.so
+*.lib
+*.exp
+*.dll
+
+# Distribution / packaging
+.Python
+.python-version
+env/
+venv/
+.venv/
+build/
+cython_debug/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+coverage.xml
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Don't want to see any ROMs being uploaded
+# This project is not for pirating games!
+*.gb
+*.gbc
+*.rom
+DMG_ROM.bin
+CGB_ROM.bin
+BlarggROMs/
+TestROMs/
+ROMs/
+diffDump.txt
+Core_Dump_*
+*.gb*.state
+*.gb*.ram
+*.gb*.rtc
+/test_roms/
+*[0-9a-f]{6}.m?d
+test_data.encrypted
+*.lock
+tetris/
+PyBoy-RL/
+
+# Cython
+/pyboy/**/*.c
+/pyboy/**/*.h
+/pyboy/**/*.html
+/pyboy/**/*.so
+
+/recordings
+/screenshots
+
+/bin
+/include
+/lib-python
+/lib_pypy
+/pip-selfcheck.json
+/site-packages
+/share
+
+
+
+.vscode/
+
+/checkpoints/
+/node_modules/
