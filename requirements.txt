@@ -1,0 +1,9 @@
+numpy>=1.19.0
+torch>=1.7.0
+gymnasium>=1.0.0
+matplotlib>=3.3.0
+PyBoy>=1.4.0
+tensordict>=0.1.0
+torchrl>=0.2.0
+stable-baselines3[extra]>=2.0.0
+pufferlib>=0.4.0
