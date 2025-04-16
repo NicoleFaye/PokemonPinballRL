@@ -5,6 +5,17 @@ from typing import Optional, Dict, Any, Tuple
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
+from pyboy import PyBoy
+from pyboy.plugins.game_wrapper_pokemon_pinball import Stage, BallType, SpecialMode, Maps, Pokemon
+
+# Build a mapping enums and sequential indices
+STAGE_ENUMS = list(Stage)
+STAGE_TO_INDEX = {stage: idx for idx, stage in enumerate(STAGE_ENUMS)}
+INDEX_TO_STAGE = {idx: stage for idx, stage in enumerate(STAGE_ENUMS)}
+
+BALL_TYPE_ENUMS = list(BallType)
+BALL_TYPE_TO_INDEX = {ball_type: idx for idx, ball_type in enumerate(BALL_TYPE_ENUMS)}
+INDEX_TO_BALL_TYPE = {idx: ball_type for idx, ball_type in enumerate(BALL_TYPE_ENUMS)}
 
 
 class Actions(enum.Enum):
@@ -22,7 +33,14 @@ class Actions(enum.Enum):
 
 # Global observation space dimensions
 OBSERVATION_SHAPE = (16, 20)
-OBSERVATION_SPACE = spaces.Box(low=0, high=255, shape=OBSERVATION_SHAPE, dtype=np.uint8)
+DEFAULT_OBSERVATION_SPACE = spaces.Box(low=0, high=255, shape=OBSERVATION_SHAPE, dtype=np.uint8)
+
+DEFAULT_CONFIG = {
+    "debug": False,
+    "headless": False,
+    "reward_shaping": None,
+    "info_level": 2,
+}
 
 
 class PokemonPinballEnv(gym.Env):
@@ -30,7 +48,7 @@ class PokemonPinballEnv(gym.Env):
     
     metadata = {"render_modes": ["human"]}
     
-    def __init__(self, pyboy, debug=False, headless=False, reward_shaping=None, info_level=2):
+    def __init__(self, rom_path="pokemon_pinball.gbc", config=DEFAULT_CONFIG ): 
         """
         Initialize the Pokemon Pinball environment.
         
@@ -42,7 +60,7 @@ class PokemonPinballEnv(gym.Env):
             info_level: Level of detail in info dict (0-3, higher=more info but slower)
         """
         super().__init__()
-        self.pyboy = pyboy
+        self.pyboy = PyBoy(rom_path, debug=config['debug'], headless=config['headless'])
         if self.pyboy is None:
             raise ValueError("PyBoy instance is required")
         assert self.pyboy.cartridge_title == "POKEPINBALLVPH", "Invalid ROM: Pokémon Pinball required"
@@ -51,11 +69,11 @@ class PokemonPinballEnv(gym.Env):
         self._previous_fitness = 0
         self._frames_played = 0  # Track frames played in current episode
         
-        self.debug = debug
-        self.headless = headless
+        self.debug = config['debug']
+        self.headless = config['headless']
         
         # Configure speed based on mode
-        if debug:
+        if self.debug:
             # Normal speed for debugging
             self.pyboy.set_emulation_speed(1.0)
         else:
@@ -63,16 +81,51 @@ class PokemonPinballEnv(gym.Env):
             self.pyboy.set_emulation_speed(0)
             
         self.action_space = spaces.Discrete(len(Actions))
-        self.observation_space = OBSERVATION_SPACE
+        self.observation_space = self._create_observation_space(config['info_level'])
         
-        self.reward_shaping = reward_shaping
-        self.info_level = info_level
+        self.reward_shaping = config['reward_shaping']
+        self.info_level = config['info_level']
         
-        # Cache for game wrapper to avoid repeated access
         self._game_wrapper = self.pyboy.game_wrapper
         
         # Initialize game
         self._game_wrapper.start_game()
+
+    def _create_observation_space(self, info_level):
+        """Create an observation space based on the info level."""
+        # Base space is always the game area
+        observations_dict = {
+            'game_area': spaces.Box(low=0, high=255, shape=OBSERVATION_SHAPE, dtype=np.uint8)
+        }
+        
+        # Add spaces based on info level
+        if info_level >= 1:
+            # Level 1 - ball position and velocity
+            observations_dict.update({
+                'ball_x': spaces.Box(low=-128, high=128, shape=(1,), dtype=np.float32),
+                'ball_y': spaces.Box(low=-128, high=128, shape=(1,), dtype=np.float32),
+                'ball_x_velocity': spaces.Box(low=-128, high=128, shape=(1,), dtype=np.float32),
+                'ball_y_velocity': spaces.Box(low=-128, high=128, shape=(1,), dtype=np.float32),
+            })
+        
+        if info_level >= 2:
+            # Level 2 - Additional game state
+
+            observations_dict.update({
+                'current_stage': spaces.Discrete(len(STAGE_ENUMS)),
+                'ball_type': spaces.Discrete(len(BALL_TYPE_ENUMS)),
+                'special_mode': spaces.Discrete(len(SpecialMode)),
+                'special_mode_active': spaces.Discrete(2),  # Boolean (0/1)
+                'saver_active': spaces.Discrete(2),    # Boolean (0/1)
+            })
+            
+        if info_level >= 3:
+            # Level 3 - Most detailed information
+            observations_dict.update({
+                'pikachu_saver_charge': spaces.Discrete(16), # Pikachu saver charge values go from 0-15
+            })
+        
+        return spaces.Dict(observations_dict)
         
     def step(self, action):
         """
@@ -157,7 +210,7 @@ class PokemonPinballEnv(gym.Env):
         
         game_wrapper = self._game_wrapper
         game_wrapper.reset_game()
-        # TODO: Enable when added to PyBoy repo
+        # this method currently is not in the official pyboy API, but there is a pull request to add it
         game_wrapper.reset_tracking()
         
         # Reset fitness tracking
@@ -179,53 +232,56 @@ class PokemonPinballEnv(gym.Env):
         """Close the environment and stop PyBoy."""
         self.pyboy.stop()
         
-    def _get_obs(self):
-        """Get the observation from the environment."""
-        return self.pyboy.game_area()
-        
     def _get_info(self):
-        """
-        Get additional information from the environment.
+        """Get additional information from the environment."""
+        return {}
         
-        Returns:
-            Dictionary of additional information
+    def _get_obs(self):
         """
-        # Access game wrapper only once
+        Get the current observation from the environment.
+        """
         game_wrapper = self._game_wrapper
         
+        observation = {
+            "game_area": game_wrapper.game_area(),
+        }
         # Level 0 - no info
         if self.info_level == 0:
-            return {}
+            return observation
         
         # Level 1 - position and velocity information
-        info = {
+        observation.update({
             "ball_x": game_wrapper.ball_x,
             "ball_y": game_wrapper.ball_y,
             "ball_x_velocity": game_wrapper.ball_x_velocity,
             "ball_y_velocity": game_wrapper.ball_y_velocity,
-        }
+        })
         
         if self.info_level == 1:
-            return info
+            return observation
         
         # Level 2 - More detailed information
         if self.info_level >= 2:
-            info.update({
-                "current_stage": game_wrapper.current_stage,
-                "ball_type": game_wrapper.ball_type,
+            observation.update({
+                "current_stage": STAGE_TO_INDEX.get(game_wrapper.current_stage),
+                "ball_type": BALL_TYPE_TO_INDEX.get(game_wrapper.ball_type),
                 "special_mode": game_wrapper.special_mode,
                 "special_mode_active": game_wrapper.special_mode_active,
-                "game_score": game_wrapper.score
             })
             
             if game_wrapper.ball_saver_seconds_left > 0:
-                info["saver_active"] = True
-            
+                observation["saver_active"] = True
+            else :
+                observation["saver_active"] = False
             # Level 3 - Most detailed information
             if self.info_level == 3:
-                info["pikachu_saver_charge"] = game_wrapper.pikachu_saver_charge
+                observation["pikachu_saver_charge"] = game_wrapper.pikachu_saver_charge
+                # TODO add the following
+                # current map
+                #
+
         
-        return info
+        return observation
         
     def _calculate_fitness(self):
         """Calculate fitness based on the game score."""
