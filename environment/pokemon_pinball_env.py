@@ -186,12 +186,11 @@ class PokemonPinballEnv(gym.Env):
             if action_func:
                 action_func()
             
-        # Tick the emulator
-        self.pyboy.tick(1+self.frame_skip, not self.headless, False)
-        
-        # Increment frame counter
-        self._frames_played += 1
-            
+        # Perform the game tick
+        ticks = 1 + self.frame_skip
+        self.pyboy.tick(ticks, not self.headless, False)
+        self._frames_played += ticks
+
         # Get game state
         self._calculate_fitness()
         
