@@ -173,6 +173,9 @@ class PokemonPinballEnv(gym.Env):
         """
         assert self.action_space.contains(action), f"{action} ({type(action)}) invalid"
         
+        self.recent_actions = np.roll(self.recent_actions, shift=-1)
+        self.recent_actions[-1] = action
+        
         action_release_delay = math.ceil((1 + self.frame_skip) / 2)
 
         action_map = {
@@ -241,6 +244,15 @@ class PokemonPinballEnv(gym.Env):
         RewardShaping._prev_stages_completed = 0
         RewardShaping._prev_ball_upgrades = 0
         
+        # Reset frame stacks
+        self.recent_visuals = np.zeros(self.visual_output_shape, dtype=np.uint8)
+        self.recent_actions = np.zeros((self.frame_stack,), dtype=np.uint8)
+        if self.frame_stack_extra_observation:
+            self.recent_ball_x = np.zeros((self.frame_stack,), dtype=np.float32)
+            self.recent_ball_y = np.zeros((self.frame_stack,), dtype=np.float32)
+            self.recent_ball_x_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
+            self.recent_ball_y_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
+        
         game_wrapper = self._game_wrapper
         game_wrapper.reset_game()
         # this method currently is not in the official pyboy API, but there is a pull request to add it
@@ -275,20 +287,48 @@ class PokemonPinballEnv(gym.Env):
         """
         game_wrapper = self._game_wrapper
         
+        # Update recent frames with new observation
+        game_area = game_wrapper.game_area()
+        
+        # Shift the frames to make room for the new one
+        self.recent_visuals = np.roll(self.recent_visuals, shift=-1, axis=2)
+        self.recent_visuals[:, :, -1] = game_area
+        
         observation = {
-            "game_area": game_wrapper.game_area(),
+            "game_area": self.recent_visuals,
         }
+        
         # Level 0 - no info
         if self.info_level == 0:
             return observation
         
         # Level 1 - position and velocity information
-        observation.update({
-            "ball_x": game_wrapper.ball_x,
-            "ball_y": game_wrapper.ball_y,
-            "ball_x_velocity": game_wrapper.ball_x_velocity,
-            "ball_y_velocity": game_wrapper.ball_y_velocity,
-        })
+        if self.frame_stack_extra_observation:
+            # Update the recent positions and velocities
+            self.recent_ball_x = np.roll(self.recent_ball_x, shift=-1)
+            self.recent_ball_y = np.roll(self.recent_ball_y, shift=-1)
+            self.recent_ball_x_velocity = np.roll(self.recent_ball_x_velocity, shift=-1)
+            self.recent_ball_y_velocity = np.roll(self.recent_ball_y_velocity, shift=-1)
+            
+            # Add new values
+            self.recent_ball_x[-1] = game_wrapper.ball_x
+            self.recent_ball_y[-1] = game_wrapper.ball_y
+            self.recent_ball_x_velocity[-1] = game_wrapper.ball_x_velocity
+            self.recent_ball_y_velocity[-1] = game_wrapper.ball_y_velocity
+            
+            observation.update({
+                "ball_x": self.recent_ball_x,
+                "ball_y": self.recent_ball_y,
+                "ball_x_velocity": self.recent_ball_x_velocity,
+                "ball_y_velocity": self.recent_ball_y_velocity,
+            })
+        else:
+            observation.update({
+                "ball_x": game_wrapper.ball_x,
+                "ball_y": game_wrapper.ball_y,
+                "ball_x_velocity": game_wrapper.ball_x_velocity,
+                "ball_y_velocity": game_wrapper.ball_y_velocity,
+            })
         
         if self.info_level == 1:
             return observation
@@ -304,9 +344,10 @@ class PokemonPinballEnv(gym.Env):
             
         if game_wrapper.ball_saver_seconds_left > 0:
             observation["saver_active"] = True
-        else :
+        else:
             observation["saver_active"] = False
-            # Level 3 - Most detailed information
+        
+        # Level 3 - Most detailed information
         if self.info_level >= 3:
             observation["pikachu_saver_charge"] = game_wrapper.pikachu_saver_charge
             # TODO add the following
