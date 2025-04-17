@@ -84,21 +84,28 @@ class PokemonPinballEnv(gym.Env):
         self.frame_stack_extra_observation = config['frame_stack_extra_observation']
 
         if config['visual_mode'] == "game_area":
-            self.output_shape = (16, 20, self.frame_stack)
+            self.visual_output_shape = (16, 20, self.frame_stack)
         elif config['visual_mode'] == "screen":
             #TODO implement screen mode
             if config['reduce_screen_resolution']:
-                self.output_shape = (144/2, 160/2, self.frame_stack)
+                self.visual_output_shape = (144/2, 160/2, self.frame_stack)
             else:
-                self.output_shape = (144, 160, self.frame_stack)
+                self.visual_output_shape = (144, 160, self.frame_stack)
 
-        
+        self.recent_visuals = np.zeros(self.visual_output_shape, dtype=np.uint8)
+        self.recent_actions = np.zeros((self.frame_stack,), dtype=np.uint8)
+        if self.frame_stack_extra_observation:
+            self.recent_ball_x = np.zeros((self.frame_stack,), dtype=np.float32)
+            self.recent_ball_y = np.zeros((self.frame_stack,), dtype=np.float32)
+            self.recent_ball_x_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
+            self.recent_ball_y_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
+
         # Configure speed based on mode
         if self.debug:
             # Normal speed for debugging
             self.pyboy.set_emulation_speed(1.0)
         else:
-            # Maximum speed (0 = no limit)
+            # Maximum speed 
             self.pyboy.set_emulation_speed(0)
             
         self.action_space = spaces.Discrete(len(Actions))
@@ -118,7 +125,7 @@ class PokemonPinballEnv(gym.Env):
         observations_dict = {}
 
         observations_dict.update( {
-            'game_area': spaces.Box(low=0, high=255, shape=self.output_shape ,dtype=np.uint8)
+            'game_area': spaces.Box(low=0, high=255, shape=self.visual_output_shape ,dtype=np.uint8)
         })
         
         # Add spaces based on info level
@@ -126,7 +133,7 @@ class PokemonPinballEnv(gym.Env):
             # Level 1 - ball position and velocity
             obs_shape=(1,)
             if self.frame_stack_extra_observation:
-                obs_shape=(1,self.frame_stack)
+                obs_shape=(self.frame_stack,)
 
             observations_dict.update({
                 'ball_x': spaces.Box(low=-128, high=128, shape=obs_shape, dtype=np.float32),
