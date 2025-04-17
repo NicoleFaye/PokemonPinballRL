@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any, Tuple
 
 import gymnasium as gym
 import numpy as np
+import math
 from gymnasium import spaces
 from pyboy import PyBoy
 from pyboy.plugins.game_wrapper_pokemon_pinball import Stage, BallType, SpecialMode, Maps, Pokemon
@@ -40,6 +41,11 @@ DEFAULT_CONFIG = {
     "headless": False,
     "reward_shaping": None,
     "info_level": 2,
+    "frame_stack": 4,
+    "frame_skip": 3,
+    "visual_mode": "game_area", # alternative would be screen
+    "frame_stack_extra_observation": False,
+    "reduce_screen_resolution": True,
 }
 
 
@@ -71,6 +77,21 @@ class PokemonPinballEnv(gym.Env):
         
         self.debug = config['debug']
         self.headless = config['headless']
+
+        self.frame_skip = config['frame_skip']
+
+        self.frame_stack = config['frame_stack']
+        self.frame_stack_extra_observation = config['frame_stack_extra_observation']
+
+        if config['visual_mode'] == "game_area":
+            self.output_shape = (16, 20, self.frame_stack)
+        elif config['visual_mode'] == "screen":
+            #TODO implement screen mode
+            if config['reduce_screen_resolution']:
+                self.output_shape = (144/2, 160/2, self.frame_stack)
+            else:
+                self.output_shape = (144, 160, self.frame_stack)
+
         
         # Configure speed based on mode
         if self.debug:
@@ -94,18 +115,24 @@ class PokemonPinballEnv(gym.Env):
     def _create_observation_space(self, info_level):
         """Create an observation space based on the info level."""
         # Base space is always the game area
-        observations_dict = {
-            'game_area': spaces.Box(low=0, high=255, shape=OBSERVATION_SHAPE, dtype=np.uint8)
-        }
+        observations_dict = {}
+
+        observations_dict.update( {
+            'game_area': spaces.Box(low=0, high=255, shape=self.output_shape ,dtype=np.uint8)
+        })
         
         # Add spaces based on info level
         if info_level >= 1:
             # Level 1 - ball position and velocity
+            obs_shape=(1,)
+            if self.frame_stack_extra_observation:
+                obs_shape=(1,self.frame_stack)
+
             observations_dict.update({
-                'ball_x': spaces.Box(low=-128, high=128, shape=(1,), dtype=np.float32),
-                'ball_y': spaces.Box(low=-128, high=128, shape=(1,), dtype=np.float32),
-                'ball_x_velocity': spaces.Box(low=-128, high=128, shape=(1,), dtype=np.float32),
-                'ball_y_velocity': spaces.Box(low=-128, high=128, shape=(1,), dtype=np.float32),
+                'ball_x': spaces.Box(low=-128, high=128, shape=obs_shape, dtype=np.float32),
+                'ball_y': spaces.Box(low=-128, high=128, shape=obs_shape,dtype=np.float32),
+                'ball_x_velocity': spaces.Box(low=-128, high=128, shape=obs_shape, dtype=np.float32),
+                'ball_y_velocity': spaces.Box(low=-128, high=128, shape=obs_shape, dtype=np.float32),
             })
         
         if info_level >= 2:
@@ -139,18 +166,18 @@ class PokemonPinballEnv(gym.Env):
         """
         assert self.action_space.contains(action), f"{action} ({type(action)}) invalid"
         
-        # Move the agent - optimized to avoid unnecessary if/elif chain
-        # Use lookup table of actions for better performance
+        action_release_delay = math.ceil((1 + self.frame_skip) / 2)
+
         action_map = {
             Actions.LEFT_FLIPPER_PRESS.value: lambda: self.pyboy.button_press("left"),
             Actions.RIGHT_FLIPPER_PRESS.value: lambda: self.pyboy.button_press("a"),
             Actions.LEFT_FLIPPER_RELEASE.value: lambda: self.pyboy.button_release("left"),
             Actions.RIGHT_FLIPPER_RELEASE.value: lambda: self.pyboy.button_release("a"),
-            Actions.LEFT_TILT.value: lambda: self.pyboy.button("down"),
-            Actions.RIGHT_TILT.value: lambda: self.pyboy.button("b"),
-            Actions.UP_TILT.value: lambda: self.pyboy.button("select"),
-            Actions.LEFT_UP_TILT.value: lambda: (self.pyboy.button("select"), self.pyboy.button("down")),
-            Actions.RIGHT_UP_TILT.value: lambda: (self.pyboy.button("select"), self.pyboy.button("b"))
+            Actions.LEFT_TILT.value: lambda: self.pyboy.button("down",action_release_delay),
+            Actions.RIGHT_TILT.value: lambda: self.pyboy.button("b",action_release_delay),
+            Actions.UP_TILT.value: lambda: self.pyboy.button("select",action_release_delay),
+            Actions.LEFT_UP_TILT.value: lambda: (self.pyboy.button("select",action_release_delay), self.pyboy.button("down",action_release_delay)),
+            Actions.RIGHT_UP_TILT.value: lambda: (self.pyboy.button("select",action_release_delay), self.pyboy.button("b",action_release_delay)),
         }
         
         # Execute the action if it's not IDLE
@@ -160,7 +187,7 @@ class PokemonPinballEnv(gym.Env):
                 action_func()
             
         # Tick the emulator
-        self.pyboy.tick(1, not self.headless, False)
+        self.pyboy.tick(1+self.frame_skip, not self.headless, False)
         
         # Increment frame counter
         self._frames_played += 1
@@ -269,16 +296,16 @@ class PokemonPinballEnv(gym.Env):
                 "special_mode_active": game_wrapper.special_mode_active,
             })
             
-            if game_wrapper.ball_saver_seconds_left > 0:
-                observation["saver_active"] = True
-            else :
-                observation["saver_active"] = False
+        if game_wrapper.ball_saver_seconds_left > 0:
+            observation["saver_active"] = True
+        else :
+            observation["saver_active"] = False
             # Level 3 - Most detailed information
-            if self.info_level == 3:
-                observation["pikachu_saver_charge"] = game_wrapper.pikachu_saver_charge
-                # TODO add the following
-                # current map
-                #
+        if self.info_level >= 3:
+            observation["pikachu_saver_charge"] = game_wrapper.pikachu_saver_charge
+            # TODO add the following
+            # current map
+            #
 
         
         return observation
