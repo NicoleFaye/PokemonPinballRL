@@ -98,8 +98,9 @@ def make(name, rom_path=None, headless=True, reward_shaping="comprehensive",
     # Add render wrapper for PufferLib compatibility
     env = PinballRenderWrapper(env)
     
-    # Apply PufferLib postprocessing
-    env = pufferlib.postprocess.EpisodeStats(env)
+    # Apply PufferLib postprocessing - we'll handle stats directly in our environment
+    # to avoid issues with data types and ensure all metrics are list values
+    # env = pufferlib.postprocess.EpisodeStats(env)
     
     # Convert to PufferLib env
     return PinballPufferEnv(env=env, num_agents=1, buf=buf)
@@ -201,7 +202,37 @@ class PinballPufferEnv(pufferlib.environment.PufferEnv):
         self.episode_returns = [0.0] * self.num_agents
         self.episode_lengths = [0] * self.num_agents
         
-        return self.observations, [info]
+        # Process info to ensure list values
+        processed_info = self._ensure_list_values(info)
+        
+        return self.observations, [processed_info]
+    
+    def _ensure_list_values(self, info):
+        """
+        Ensure all values in the info dictionary are list-like for PufferLib.
+        
+        Args:
+            info: The original info dictionary
+            
+        Returns:
+            Updated info dictionary with list values
+        """
+        processed_info = {}
+        for k, v in info.items():
+            # If value is already a list or list-like, keep it
+            if isinstance(v, (list, tuple, np.ndarray)):
+                processed_info[k] = v
+            # If value is a dict, process its contents recursively
+            elif isinstance(v, dict):
+                processed_info[k] = self._ensure_list_values(v)
+            # Otherwise, wrap it in a list
+            else:
+                # Convert to float for numeric values
+                if isinstance(v, (int, float, bool, np.number)):
+                    processed_info[k] = [float(v)]
+                else:
+                    processed_info[k] = [v]
+        return processed_info
     
     def step(self, actions):
         """
@@ -233,15 +264,24 @@ class PinballPufferEnv(pufferlib.environment.PufferEnv):
         
         # If episode ended, add to info
         if done or truncated:
+            # Add episode metrics to info
             info['episode'] = {
                 'r': self.episode_returns[0],
-                'l': self.episode_lengths[0]
+                'l': self.episode_lengths[0],
+                'truncated': truncated  # Explicitly mark if episode was truncated
             }
+            info['episode_fitness'] = self.episode_returns[0]
+            info['episode_length'] = self.episode_lengths[0]
+            info['truncated'] = truncated
+            
             # Reset tracking
             self.episode_returns[0] = 0.0
             self.episode_lengths[0] = 0
         
-        return self.observations, self.rewards, self.terminals, self.truncations, [info]
+        # Ensure all info values are list-like for PufferLib
+        processed_info = self._ensure_list_values(info)
+        
+        return self.observations, self.rewards, self.terminals, self.truncations, [processed_info]
     
     def close(self):
         """Close the environment."""
