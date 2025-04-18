@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument("--rom", type=str, required=True, help="Path to Pokemon Pinball ROM file")
     
     # Training parameters
-    parser.add_argument("--timesteps", type=int, default=5000000, help="Total timesteps to train for")
+    parser.add_argument("--timesteps", type=int, default=5_000_000, help="Total timesteps to train for")
     parser.add_argument("--num-envs", type=int, default=4, help="Number of parallel environments")
     parser.add_argument("--lr", type=float, default=2.5e-4, help="Learning rate")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
