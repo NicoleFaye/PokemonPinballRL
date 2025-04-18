@@ -84,6 +84,17 @@ class PokemonPinballEnv(gym.Env):
         self.frame_stack_extra_observation = config['frame_stack_extra_observation']
         self.visual_mode = config['visual_mode']
         self.reduce_screen_resolution = config.get('reduce_screen_resolution', True)
+        
+        # Stuck detection parameters (always enabled)
+        self.stuck_detection_window = max(30, self.frame_stack * 5)  # At least 5x the frame stack
+        self.stuck_detection_threshold = 5.0  # Movement threshold in pixels
+        self.stuck_detection_reward_threshold = 100  # Min score change to avoid being "stuck"
+        
+        # Buffer for tracking ball positions
+        self.ball_position_history = []
+        self.last_score = 0
+
+        self.episodes_completed = 0
 
         # Set output shape based on visual mode
         if self.visual_mode == "game_area":
@@ -221,7 +232,8 @@ class PokemonPinballEnv(gym.Env):
         self._calculate_fitness()
         
         # Determine if game is over
-        done = self._game_wrapper.game_over
+        #done = self._game_wrapper.game_over
+        done = self._game_wrapper.lost_ball_during_saver or self._game_wrapper.game_over or self._game_wrapper.balls_left<2
         
         # Apply reward shaping
         if self.reward_shaping:
@@ -232,12 +244,16 @@ class PokemonPinballEnv(gym.Env):
         # Get observation
         observation = self._get_obs()
         
+        # Check for stuck ball (if enabled)
+        truncated = self._check_if_stuck(observation)
+        
         # Get info with appropriate level of detail
         info = self._get_info()
         
-        # Check if the game is truncated (cut short for some reason)
-        # Always false for now, could be parameterized later
-        truncated = False
+        # Add stuck status to info if applicable
+        if truncated:
+            info['truncated_reason'] = ['stuck_ball']
+            self.reset()
         
         return observation, reward, done, truncated, info
         
@@ -270,6 +286,25 @@ class PokemonPinballEnv(gym.Env):
         self._previous_fitness = 0
         self._frames_played = 0  # Reset frame counter
         
+        # Reset stuck detection
+        self.ball_position_history = []
+        self.last_score = 0
+        
+        # Clear frame buffer to ensure fresh initialization
+        buffer_key = f"{self.visual_mode}_buffer"
+        if hasattr(self, buffer_key):
+            delattr(self, buffer_key)
+        
+        # Reset frame stacking for ball positions if used
+        if self.frame_stack_extra_observation:
+            self.recent_ball_x = np.zeros((self.frame_stack,), dtype=np.float32)
+            self.recent_ball_y = np.zeros((self.frame_stack,), dtype=np.float32)
+            self.recent_ball_x_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
+            self.recent_ball_y_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
+        
+
+        self.episodes_completed += 1
+
         # Get observation and info once
         observation = self._get_obs()
         info = self._get_info()
@@ -286,7 +321,69 @@ class PokemonPinballEnv(gym.Env):
         
     def _get_info(self):
         """Get additional information from the environment."""
-        return {}
+        game_wrapper = self._game_wrapper
+        
+        # Convert all numeric values to lists for PufferLib compatibility
+        # Basic info (always included)
+        info = {
+            'score': [float(game_wrapper.score)],
+            'episode_return': [float(self._fitness)],
+            'episode_length': [float(self._frames_played)],
+            'agent_episodes_completed': [float(self.episodes_completed)],
+        }
+        
+        # Game progress info
+        info.update({
+            'pokemon_caught': [float(game_wrapper.pokemon_caught_in_session)],
+            'evolutions': [float(game_wrapper.evolution_success_count)],
+            'ball_saver_active': [float(game_wrapper.ball_saver_seconds_left > 0)],
+            'current_stage': [str(game_wrapper.current_stage)],
+            'ball_type': [str(game_wrapper.ball_type)],
+            'special_mode_active': [float(game_wrapper.special_mode_active)],
+            'pikachu_saver_charge': [float(game_wrapper.pikachu_saver_charge)]
+        })
+        
+        # Stage completion info - use lists for PufferLib compatibility
+        total_stages = (
+            game_wrapper.diglett_stages_completed +
+            game_wrapper.gengar_stages_completed +
+            game_wrapper.meowth_stages_completed +
+            game_wrapper.seel_stages_completed +
+            game_wrapper.mewtwo_stages_completed
+        )
+        
+        info.update({
+            'diglett_stages': [float(game_wrapper.diglett_stages_completed)],
+            'gengar_stages': [float(game_wrapper.gengar_stages_completed)],
+            'meowth_stages': [float(game_wrapper.meowth_stages_completed)],
+            'seel_stages': [float(game_wrapper.seel_stages_completed)],
+            'mewtwo_stages': [float(game_wrapper.mewtwo_stages_completed)],
+            'total_stages_completed': [float(total_stages)]
+        })
+        
+        # Ball upgrade info - use lists for PufferLib compatibility
+        total_upgrades = (
+            game_wrapper.great_ball_upgrades +
+            game_wrapper.ultra_ball_upgrades +
+            game_wrapper.master_ball_upgrades
+        )
+        
+        info.update({
+            'great_ball_upgrades': [float(game_wrapper.great_ball_upgrades)],
+            'ultra_ball_upgrades': [float(game_wrapper.ultra_ball_upgrades)],
+            'master_ball_upgrades': [float(game_wrapper.master_ball_upgrades)],
+            'total_ball_upgrades': [float(total_upgrades)]
+        })
+        
+        # Ball position and velocity (useful for analysis)
+        info.update({
+            'ball_x': [float(game_wrapper.ball_x)],
+            'ball_y': [float(game_wrapper.ball_y)],
+            'ball_x_velocity': [float(game_wrapper.ball_x_velocity)],
+            'ball_y_velocity': [float(game_wrapper.ball_y_velocity)]
+        })
+        
+        return info
         
     def _get_obs(self):
         """
@@ -433,6 +530,58 @@ class PokemonPinballEnv(gym.Env):
         """Calculate fitness based on the game score."""
         self._previous_fitness = self._fitness
         self._fitness = self._game_wrapper.score
+        
+    def _check_if_stuck(self, observation):
+        """
+        Check if the ball is stuck in the same area for too long.
+        
+        Args:
+            observation: Current observation
+            
+        Returns:
+            Boolean indicating if episode should be truncated due to stuck ball
+        """
+        # Get current ball position
+        game_wrapper = self._game_wrapper
+        current_x = game_wrapper.ball_x
+        current_y = game_wrapper.ball_y
+        current_score = game_wrapper.score
+        
+        # Add to history
+        self.ball_position_history.append((current_x, current_y))
+        
+        # Only check after we have enough history
+        if len(self.ball_position_history) < self.stuck_detection_window:
+            return False
+            
+        # Keep history at fixed size
+        if len(self.ball_position_history) > self.stuck_detection_window:
+            self.ball_position_history.pop(0)
+        
+        # Check if score has changed enough (if score increases a lot, agent isn't stuck)
+        score_change = current_score - self.last_score
+        if score_change > self.stuck_detection_reward_threshold:
+            # Reset history if significant progress was made
+            self.ball_position_history = []
+            self.last_score = current_score
+            return False
+            
+        # Calculate maximum distance moved in any direction
+        max_x_change = 0
+        max_y_change = 0
+        for x, y in self.ball_position_history:
+            x_change = abs(current_x - x)
+            y_change = abs(current_y - y)
+            max_x_change = max(max_x_change, x_change)
+            max_y_change = max(max_y_change, y_change)
+            
+        # If both x and y movement are below threshold, ball is stuck
+        if max_x_change < self.stuck_detection_threshold and max_y_change < self.stuck_detection_threshold:
+            return True
+            
+        # Update last score
+        self.last_score = current_score
+        return False
 
 
 class RewardShaping:
