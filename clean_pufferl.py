@@ -56,6 +56,19 @@ def create(config, vecenv, policy, optimizer=None, wandb=None):
     optimizer = torch.optim.Adam(policy.parameters(),
         lr=config.learning_rate, eps=1e-5)
 
+    # Global counters for tracking cumulative stats across all environments
+    global_counters = {
+        'total_episodes': 0,
+        'total_pokemon_caught': 0,
+        'total_evolutions': 0,
+        'total_stages_completed': 0,
+        'total_ball_upgrades': 0,
+        'total_bonus_time': 0,
+        'total_catch_mode_time': 0,
+        'total_points_scored': 0,
+        'total_high_scores': 0,
+    }
+
     return pufferlib.namespace(
         config=config,
         vecenv=vecenv,
@@ -72,6 +85,8 @@ def create(config, vecenv, policy, optimizer=None, wandb=None):
         msg=msg,
         last_log_time=0,
         utilization=utilization,
+        global_counters=global_counters,
+        episode_infos=[],  # Store complete episode infos
     )
 
 @pufferlib.utils.profile
@@ -126,6 +141,50 @@ def evaluate(data):
             data.vecenv.send(actions)
 
     with profile.eval_misc:
+        # Process episode info for completed episodes
+        if 'episode_complete' in infos:
+            episode_completions = infos['episode_complete']
+            for idx, is_complete in enumerate(episode_completions):
+                if is_complete:
+                    # Create a completed episode info dict
+                    episode_info = {}
+                    for k, v in infos.items():
+                        if len(v) > idx:  # Make sure we have data for this index
+                            episode_info[k] = v[idx]
+                    
+                    # Store the full episode info
+                    data.episode_infos.append(episode_info)
+                    
+                    # Update global counters
+                    data.global_counters['total_episodes'] += 1
+                    
+                    # Extract Pokemon-specific metrics
+                    if 'pokemon_caught' in episode_info:
+                        data.global_counters['total_pokemon_caught'] += episode_info['pokemon_caught']
+                    
+                    if 'evolutions' in episode_info:
+                        data.global_counters['total_evolutions'] += episode_info['evolutions']
+                    
+                    # Sum up stages completed
+                    total_stages = 0
+                    for stage_type in ['diglett_stages', 'gengar_stages', 'meowth_stages', 
+                                     'seel_stages', 'mewtwo_stages']:
+                        if stage_type in episode_info:
+                            total_stages += episode_info[stage_type]
+                    data.global_counters['total_stages_completed'] += total_stages
+                    
+                    # Sum up ball upgrades
+                    total_upgrades = 0
+                    for upgrade_type in ['great_ball_upgrades', 'ultra_ball_upgrades', 'master_ball_upgrades']:
+                        if upgrade_type in episode_info:
+                            total_upgrades += episode_info[upgrade_type]
+                    data.global_counters['total_ball_upgrades'] += total_upgrades
+                    
+                    # Store score
+                    if 'score' in episode_info:
+                        data.global_counters['total_points_scored'] += episode_info['score']
+        
+        # Process regular stats
         for k, v in infos.items():
             if '_map' in k and data.wandb is not None:
                 data.stats[f'Media/{k}'] = data.wandb.Image(v[0])
@@ -290,6 +349,47 @@ def mean_and_log(data):
         return
 
     data.last_log_time = time.time()
+    
+    # Process episode stats from collected episode infos
+    episode_metrics = {}
+    if len(data.episode_infos) > 0:
+        # Calculate episode-level statistics
+        episode_lengths = [info.get('episode_length', [0])[0] for info in data.episode_infos]
+        episode_scores = [info.get('score', [0])[0] for info in data.episode_infos]
+        
+        # Calculate per-episode averages
+        if episode_lengths:
+            episode_metrics['episodes/avg_length'] = np.mean(episode_lengths)
+            episode_metrics['episodes/avg_score'] = np.mean(episode_scores)
+            
+            # Create histograms for distributions
+            if len(episode_lengths) >= 3:
+                episode_metrics['episodes/length_hist'] = data.wandb.Histogram(episode_lengths)
+                episode_metrics['episodes/score_hist'] = data.wandb.Histogram(episode_scores)
+        
+        # More detailed stats if available
+        pokemon_caught = [info.get('pokemon_caught', [0])[0] for info in data.episode_infos]
+        if any(pokemon_caught):
+            episode_metrics['episodes/avg_pokemon_caught'] = np.mean(pokemon_caught)
+            
+        # Clear processed episodes
+        data.episode_infos = []
+    
+    # Create metrics from global counters
+    global_metrics = {f'global/{k}': v for k, v in data.global_counters.items()}
+    
+    # Calculate rates if we have episodes
+    if data.global_counters['total_episodes'] > 0:
+        rates = {
+            'rates/pokemon_per_episode': data.global_counters['total_pokemon_caught'] / data.global_counters['total_episodes'],
+            'rates/evolutions_per_episode': data.global_counters['total_evolutions'] / data.global_counters['total_episodes'],
+            'rates/stages_per_episode': data.global_counters['total_stages_completed'] / data.global_counters['total_episodes'],
+            'rates/upgrades_per_episode': data.global_counters['total_ball_upgrades'] / data.global_counters['total_episodes'],
+            'rates/points_per_episode': data.global_counters['total_points_scored'] / data.global_counters['total_episodes'],
+        }
+        global_metrics.update(rates)
+    
+    # Combine all metrics and log to wandb
     data.wandb.log({
         '0verview/SPS': data.profile.SPS,
         '0verview/agent_steps': data.global_step,
@@ -298,6 +398,8 @@ def mean_and_log(data):
         **{f'environment/{k}': v for k, v in data.stats.items()},
         **{f'losses/{k}': v for k, v in data.losses.items()},
         **{f'performance/{k}': v for k, v in data.profile},
+        **episode_metrics,
+        **global_metrics,
     })
 
 def close(data):

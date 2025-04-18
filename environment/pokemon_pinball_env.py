@@ -76,6 +76,10 @@ class PokemonPinballEnv(gym.Env):
         self._previous_fitness = 0
         self._frames_played = 0  # Track frames played in current episode
         
+        # Episode tracking
+        self._high_score = 0  # Track highest score seen
+        self._episode_count = 0
+        
         # Initialize tracking variables used in reward shaping
         self._prev_caught = 0
         self._prev_evolutions = 0
@@ -267,6 +271,16 @@ class PokemonPinballEnv(gym.Env):
         # Get info with appropriate level of detail
         info = self._get_info()
         
+        # Add episode completion flag when episode ends
+        if done or truncated:
+            info['episode_complete'] = [True]
+            info['episode_length'] = [float(self._frames_played)]
+            
+            # Add high score flag if appropriate (for tracking best episodes)
+            if self._game_wrapper.score > self._high_score:
+                self._high_score = self._game_wrapper.score
+                info['high_score'] = [True]
+        
         # Add stuck status to info if applicable
         if truncated:
             info['truncated_reason'] = ['stuck_ball']
@@ -319,8 +333,9 @@ class PokemonPinballEnv(gym.Env):
             self.recent_ball_x_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
             self.recent_ball_y_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
         
-
+        # Track episode completion
         self.episodes_completed += 1
+        self._episode_count += 1
 
         # Get observation and info once
         observation = self._get_obs()
@@ -347,6 +362,8 @@ class PokemonPinballEnv(gym.Env):
             'episode_return': [float(self._fitness)],
             'episode_length': [float(self._frames_played)],
             'agent_episodes_completed': [float(self.episodes_completed)],
+            'episode_id': [float(self._episode_count)],
+            'episode_complete': [False],  # Will be set to True when episode ends
         }
         
         # Game progress info
