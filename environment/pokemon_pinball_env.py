@@ -86,7 +86,7 @@ class PokemonPinballEnv(gym.Env):
         self.reduce_screen_resolution = config.get('reduce_screen_resolution', True)
         
         # Stuck detection parameters (always enabled)
-        self.stuck_detection_window = max(30, self.frame_stack * 5)  # At least 5x the frame stack
+        self.stuck_detection_window = max(50, self.frame_stack * 5)  # At least 5x the frame stack
         self.stuck_detection_threshold = 5.0  # Movement threshold in pixels
         self.stuck_detection_reward_threshold = 100  # Min score change to avoid being "stuck"
         
