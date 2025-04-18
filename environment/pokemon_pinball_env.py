@@ -76,6 +76,12 @@ class PokemonPinballEnv(gym.Env):
         self._previous_fitness = 0
         self._frames_played = 0  # Track frames played in current episode
         
+        # Initialize tracking variables used in reward shaping
+        self._prev_caught = 0
+        self._prev_evolutions = 0
+        self._prev_stages_completed = 0  
+        self._prev_ball_upgrades = 0
+        
         self.debug = config['debug']
         self.headless = config['headless']
 
@@ -124,7 +130,17 @@ class PokemonPinballEnv(gym.Env):
         self.action_space = spaces.Discrete(len(Actions))
         self.observation_space = self._create_observation_space(config['info_level'])
         
-        self.reward_shaping = config['reward_shaping']
+        # Set the reward shaping function
+        reward_shaping_name = config['reward_shaping']
+        if reward_shaping_name == 'basic':
+            self.reward_shaping = RewardShaping.basic
+        elif reward_shaping_name == 'catch_focused':
+            self.reward_shaping = RewardShaping.catch_focused
+        elif reward_shaping_name == 'comprehensive':
+            self.reward_shaping = RewardShaping.comprehensive
+        else:
+            self.reward_shaping = None
+            
         self.info_level = config['info_level']
         
         self._game_wrapper = self.pyboy.game_wrapper
@@ -235,9 +251,10 @@ class PokemonPinballEnv(gym.Env):
         #done = self._game_wrapper.game_over
         done = self._game_wrapper.lost_ball_during_saver or self._game_wrapper.game_over or self._game_wrapper.balls_left<2
         
-        # Apply reward shaping
+        # Apply reward shaping by calling the reward function
+        # but passing self for tracking state
         if self.reward_shaping:
-            reward = self.reward_shaping(self._fitness, self._previous_fitness, self._game_wrapper, self._frames_played)
+            reward = self._apply_reward_shaping(self.reward_shaping)
         else:
             reward = self._fitness - self._previous_fitness
             
@@ -270,11 +287,11 @@ class PokemonPinballEnv(gym.Env):
         """
         super().reset(seed=seed)
         
-        # Reset reward tracking variables
-        RewardShaping._prev_caught = 0
-        RewardShaping._prev_evolutions = 0
-        RewardShaping._prev_stages_completed = 0
-        RewardShaping._prev_ball_upgrades = 0
+        # Reset reward tracking variables (instance variables)
+        self._prev_caught = 0
+        self._prev_evolutions = 0
+        self._prev_stages_completed = 0
+        self._prev_ball_upgrades = 0
         
         game_wrapper = self._game_wrapper
         game_wrapper.reset_game()
@@ -531,6 +548,91 @@ class PokemonPinballEnv(gym.Env):
         self._previous_fitness = self._fitness
         self._fitness = self._game_wrapper.score
         
+    def _apply_reward_shaping(self, reward_function):
+        """Apply the reward shaping function, but handle tracking inside the environment.
+        
+        This ensures each environment instance maintains its own tracking state.
+        """
+        # Determine which reward shaping to use and manage the state within the environment
+        if reward_function == RewardShaping.basic:
+            return self._fitness - self._previous_fitness
+            
+        elif reward_function == RewardShaping.catch_focused:
+            score_reward = (self._fitness - self._previous_fitness) * 0.5
+            
+            # Big reward for catching Pokemon
+            catch_reward = 0
+            if self._game_wrapper.pokemon_caught_in_session > self._prev_caught:
+                catch_reward = 1000
+                self._prev_caught = self._game_wrapper.pokemon_caught_in_session
+                
+            return score_reward + catch_reward
+            
+        elif reward_function == RewardShaping.comprehensive:
+            # Log-scaled score difference
+            score_diff = self._fitness - self._previous_fitness
+            if score_diff > 0:
+                import numpy as np
+                score_reward = 15 * np.log(1 + score_diff / 100)
+            else:
+                score_reward = 0
+
+            # Ball alive reward and survival bonus
+            ball_alive_reward = 25
+            time_bonus = min(120, self._frames_played / 400)
+
+            additional_reward = 0
+            reward_sources = {}
+
+            # Catching Pokémon
+            if self._game_wrapper.pokemon_caught_in_session > self._prev_caught:
+                pokemon_reward = 500
+                additional_reward += pokemon_reward
+                reward_sources["pokemon_catch"] = pokemon_reward
+                self._prev_caught = self._game_wrapper.pokemon_caught_in_session
+
+            # Evolution rewards
+            if self._game_wrapper.evolution_success_count > self._prev_evolutions:
+                evolution_reward = 1000
+                additional_reward += evolution_reward
+                reward_sources["evolution"] = evolution_reward
+                self._prev_evolutions = self._game_wrapper.evolution_success_count
+
+            # Stage completion
+            total_stages_completed = (
+                self._game_wrapper.diglett_stages_completed +
+                self._game_wrapper.gengar_stages_completed +
+                self._game_wrapper.meowth_stages_completed +
+                self._game_wrapper.seel_stages_completed +
+                self._game_wrapper.mewtwo_stages_completed
+            )
+            if total_stages_completed > self._prev_stages_completed:
+                stage_reward = 1500
+                additional_reward += stage_reward
+                reward_sources["stage_completion"] = stage_reward
+                self._prev_stages_completed = total_stages_completed
+
+            # Ball upgrades
+            ball_upgrades = (
+                self._game_wrapper.great_ball_upgrades +
+                self._game_wrapper.ultra_ball_upgrades +
+                self._game_wrapper.master_ball_upgrades
+            )
+            if ball_upgrades > self._prev_ball_upgrades:
+                upgrade_reward = 200
+                additional_reward += upgrade_reward
+                reward_sources["ball_upgrade"] = upgrade_reward
+                self._prev_ball_upgrades = ball_upgrades
+
+            # Combine all rewards
+            total_reward = score_reward + additional_reward + ball_alive_reward + time_bonus
+
+            return total_reward
+            
+        else:
+            # Fallback to basic reward
+            return self._fitness - self._previous_fitness
+        
     def _check_if_stuck(self, observation):
         """
         Check if the ball is stuck in the same area for too long.
@@ -589,12 +691,6 @@ class RewardShaping:
     Collection of reward shaping functions for Pokemon Pinball.
     These can be passed to the environment to modify the reward structure.
     """
-    
-    # Class-level tracking variables for reward shaping
-    _prev_caught = 0
-    _prev_evolutions = 0
-    _prev_stages_completed = 0
-    _prev_ball_upgrades = 0
     
     @staticmethod
     def basic(current_fitness, previous_fitness, game_wrapper, frames_played=0):
