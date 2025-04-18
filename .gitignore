@@ -86,3 +86,5 @@ PyBoy-RL/
 
 /checkpoints/
 /node_modules/
+
+/wandb/

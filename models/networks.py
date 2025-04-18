@@ -12,6 +12,92 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     return layer
 
 
+class SmallCNNPolicy(nn.Module):
+    """
+    Small CNN policy optimized for the tiny game area (16x20) in Pokemon Pinball.
+    Uses smaller kernel sizes and strides to handle the small input dimensions.
+    """
+    
+    def __init__(self, env, hidden_size=512, cnn_channels=16):
+        """
+        Initialize the Small CNN policy.
+        
+        Args:
+            env: The environment
+            hidden_size: Size of the hidden layer
+            cnn_channels: Number of channels in CNN layers
+        """
+        super().__init__()
+        
+        # Extract observation shape
+        obs_shape = env.observation_space.shape
+        
+        # Determine if we have a frame-stacked observation (height, width, frames)
+        if len(obs_shape) == 3:
+            height, width, frame_stack = obs_shape
+        else:
+            height, width = obs_shape
+            frame_stack = 1
+            
+        # Small CNN feature extractor with small kernels and strides
+        self.features = nn.Sequential(
+            layer_init(nn.Conv2d(frame_stack, cnn_channels, kernel_size=3, stride=1, padding=1)),
+            nn.ReLU(),
+            layer_init(nn.Conv2d(cnn_channels, cnn_channels * 2, kernel_size=3, stride=1, padding=1)),
+            nn.ReLU(),
+            layer_init(nn.Conv2d(cnn_channels * 2, cnn_channels * 2, kernel_size=3, stride=1)),
+            nn.ReLU(),
+            nn.Flatten()
+        )
+        
+        # Calculate the feature size after convolution
+        # With the above architecture, a 16x20 input becomes:
+        # Conv1 (k=3,s=1,p=1): 16x20 -> 16x20
+        # Conv2 (k=3,s=1,p=1): 16x20 -> 16x20
+        # Conv3 (k=3,s=1,p=0): 16x20 -> 14x18
+        # Final output: (cnn_channels*2) x 14 x 18
+        conv_output_size = (cnn_channels * 2) * 14 * 18
+        
+        # Actor (policy) head
+        self.actor = nn.Sequential(
+            layer_init(nn.Linear(conv_output_size, hidden_size)),
+            nn.ReLU(),
+            layer_init(nn.Linear(hidden_size, env.action_space.n), std=0.01)
+        )
+        
+        # Critic (value) head
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(conv_output_size, hidden_size)),
+            nn.ReLU(),
+            layer_init(nn.Linear(hidden_size, 1), std=1.0)
+        )
+            
+    def forward(self, x):
+        """
+        Forward pass through the network.
+        
+        Args:
+            x: Input tensor (B, H, W, C) - channels last format from game_area
+            
+        Returns:
+            Tuple of (logits, value)
+        """
+        # x is in shape (batch, height, width, channels) - convert to channels first
+        x = x.permute(0, 3, 1, 2)
+        
+        # Normalize input to [0, 1]
+        x = x.float() / 255.0
+            
+        # Extract features
+        features = self.features(x)
+        
+        # Compute action logits and value
+        logits = self.actor(features)
+        value = self.critic(features)
+        
+        return logits, value
+
+
 class CNNPolicy(nn.Module):
     """
     CNN policy network for processing game images.

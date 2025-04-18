@@ -33,16 +33,20 @@ class NormalizedObservation(gym.ObservationWrapper):
         """
         super().__init__(env)
         
-        # Get the original shape
-        obs_shape = env.observation_space.shape
+        normalized_spaces = {}
         
-        # Create a new flattened observation space
-        flat_dim = int(np.prod(obs_shape))
-        
-        # Use float32 for normalized values
-        self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(flat_dim,), dtype=np.float32
-        )
+        for key, space in env.observation_space.spaces.items():
+            if isinstance(space, spaces.Box) and space.dtype == np.uint8:
+                # For image-like observations, normalize and flatten
+                flat_dim = int(np.prod(space.shape))
+                normalized_spaces[key] = spaces.Box(
+                    low=0.0, high=1.0, shape=(flat_dim,), dtype=np.float32
+                )
+            else:
+                # Keep other spaces as they are
+                normalized_spaces[key] = space
+                
+        self.observation_space = spaces.Dict(normalized_spaces)
     
     def observation(self, observation):
         """
@@ -54,18 +58,24 @@ class NormalizedObservation(gym.ObservationWrapper):
         Returns:
             Normalized, flattened observation
         """
-        # Normalize to [0, 1]
-        normalized = observation.astype(np.float32) / 255.0
+        normalized_obs = {}
         
-        # Flatten
-        flattened = normalized.flatten()
-        
-        return flattened
+        for key, value in observation.items():
+            if isinstance(value, np.ndarray) and value.dtype == np.uint8:
+                # Normalize to [0, 1] and flatten
+                normalized = value.astype(np.float32) / 255.0
+                normalized_obs[key] = normalized.flatten()
+            else:
+                # Keep other values as they are
+                normalized_obs[key] = value
+                
+        return normalized_obs
 
 
 class PufferWrapper(gym.Wrapper):
     """
     Wrapper to make Pokemon Pinball environment compatible with PufferLib.
+    Handles dictionary observation spaces correctly.
     """
     
     def __init__(self, env, normalize_reward=True, clip_reward=10.0):
@@ -89,6 +99,9 @@ class PufferWrapper(gym.Wrapper):
         self.reward_history = []
         self.returns = 0
         self.episode_length = 0
+        
+        # Check if we have a Dict observation space and update the observation space
+        # PufferLib should handle Dict spaces natively
         
         # Store the PyBoy instance for proper cleanup
         if hasattr(env, 'pyboy'):
@@ -215,11 +228,8 @@ class PokemonPinballPufferEnv(PufferEnv):
         # Reset the environment
         obs, info = self.env.reset(seed=seed)
         
-        # If observation is 2D or more, flatten it for PufferLib
-        if isinstance(obs, np.ndarray) and len(obs.shape) > 1:
-            obs = obs.flatten()
-            
-        # Put the observation into the first agent's slot
+        # Handle dictionary observation space from Pokemon Pinball
+        # No need to flatten - pufferlib can handle dictionary spaces directly
         self.observations[0] = obs
         
         # Reset episode tracking
@@ -241,11 +251,6 @@ class PokemonPinballPufferEnv(PufferEnv):
         # Take the step with the first agent's action
         obs, reward, done, truncated, info = self.env.step(actions[0])
         
-        # If observation is 2D or more, flatten it for PufferLib
-        if isinstance(obs, np.ndarray) and len(obs.shape) > 1:
-            obs = obs.flatten()
-            
-        # Store observation
         self.observations[0] = obs
         
         # Store other values
@@ -305,44 +310,36 @@ def create_env_factory(rom_path, debug=False, reward_shaping=None, frame_stack=4
         
     def env_factory(**kwargs):
         """Factory function to create environment instances."""
-        # Start PyBoy instance with appropriate window mode
-        pyboy = PyBoy(rom_path, window="SDL2" if debug else "null")
+        # Setup base environment configuration
+        info_level = kwargs.get("info_level", 2)  # Default to level 2 for more state information
         
-        # Verify that we have a game wrapper
-        if not hasattr(pyboy, 'game_wrapper') or pyboy.game_wrapper is None:
-            raise RuntimeError("PyBoy instance does not have a game wrapper or it is None.")
-            
+        config = {
+            "debug": debug,
+            "headless": not debug,
+            "reward_shaping": reward_fn,
+            "info_level": info_level,
+            "frame_stack": frame_stack,
+            "frame_skip": skip_frames,
+            "visual_mode": "game_area",
+            "frame_stack_extra_observation": False,
+            "reduce_screen_resolution": True,
+        }
+        
         # Setup base environment
         from environment.pokemon_pinball_env import PokemonPinballEnv
         
-        env = PokemonPinballEnv(
-            pyboy=pyboy,
-            debug=debug,
-            headless=not debug,
-            reward_shaping=reward_fn,
-            info_level=2
-        )
+        env = PokemonPinballEnv(rom_path, config)
         
-        # Apply standard wrappers
-        if skip_frames > 1:
-            from environment.wrappers import SkipFrame
-            env = SkipFrame(env, skip=skip_frames)
-            
         # Customize based on kwargs
         policy_type = kwargs.get("policy_type", "cnn")
         
         if policy_type == "cnn":
-            # For CNN policies, we want to preserve the 2D structure
+            # For CNN policies, we want to preserve the 2D structure in the dict space
             pass
         else:
             # For MLP policies, we want to normalize and flatten
             from environment.wrappers import NormalizedObservation
             env = NormalizedObservation(env)
-            
-        # Apply frame stacking if specified
-        if "frame_stack" in kwargs and kwargs["frame_stack"] > 1:
-            from environment.wrappers import FrameStack
-            env = FrameStack(env, num_stack=kwargs["frame_stack"], policy_type=policy_type)
             
         # Apply PufferLib wrapper if requested
         if kwargs.get("use_puffer_wrapper", False):

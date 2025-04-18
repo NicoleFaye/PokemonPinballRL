@@ -37,7 +37,8 @@ def env_creator(name='pokemon_pinball'):
 
 
 def make(name, rom_path=None, headless=True, reward_shaping="comprehensive", 
-         frame_skip=4, framestack=4, render_mode="rgb_array", buf=None):
+         frame_skip=4, framestack=4, render_mode="rgb_array", visual_mode="game_area",
+         reduce_screen_resolution=True, buf=None):
     """
     Create a PufferLib-compatible Pokemon Pinball environment.
     
@@ -49,6 +50,8 @@ def make(name, rom_path=None, headless=True, reward_shaping="comprehensive",
         frame_skip: Number of frames to skip
         framestack: Number of frames to stack
         render_mode: Rendering mode
+        visual_mode: Visual observation mode ("game_area" or "screen")
+        reduce_screen_resolution: Whether to downsample screen images
         buf: Optional buffer for PufferLib
         
     Returns:
@@ -60,11 +63,6 @@ def make(name, rom_path=None, headless=True, reward_shaping="comprehensive",
     if rom_path is None:
         raise ValueError("ROM path must be provided")
         
-    # Determine window type based on render mode
-    window_type = "null" if headless else "SDL2"
-    
-    # Initialize PyBoy
-    pyboy = PyBoy(rom_path, window=window_type, sound_emulated=False)
     
     # Determine reward shaping function
     if isinstance(reward_shaping, str):
@@ -79,29 +77,28 @@ def make(name, rom_path=None, headless=True, reward_shaping="comprehensive",
     else:
         reward_fn = reward_shaping
     
+    config = {
+        "debug" : False,
+        "headless": headless,
+        "reward_shaping": reward_fn,
+        "frame_skip": frame_skip,
+        "framestack": framestack,
+        "render_mode": render_mode,
+        "info_level": 1,
+        "frame_stack": framestack,
+        "visual_mode": visual_mode,
+        "frame_stack_extra_observation": False,
+        "reduce_screen_resolution": reduce_screen_resolution,
+    }
+
+
     # Create base environment
-    env = PokemonPinballEnv(
-        pyboy=pyboy,
-        debug=not headless,
-        headless=headless,
-        reward_shaping=reward_fn,
-        info_level=2
-    )
-    
-    # Apply frame skip wrapper if needed
-    if frame_skip > 1:
-        from environment.wrappers import SkipFrame
-        env = SkipFrame(env, skip=frame_skip)
+    env = PokemonPinballEnv(rom_path,config)
     
     # Add render wrapper for PufferLib compatibility
     env = PinballRenderWrapper(env)
     
-    # Apply frame stacking if specified
-    if framestack > 1:
-        env = gym.wrappers.FrameStack(env, framestack)
-    
     # Apply PufferLib postprocessing
-    env = PinballPostprocessor(env)
     env = pufferlib.postprocess.EpisodeStats(env)
     
     # Convert to PufferLib env
@@ -131,70 +128,15 @@ class PinballRenderWrapper(gym.Wrapper):
         if hasattr(self.env.unwrapped, 'pyboy'):
             return np.array(self.env.unwrapped.pyboy.screen_image())
         return np.zeros((144, 160, 3), dtype=np.uint8)  # Fallback
-
-
-class PinballPostprocessor(gym.Wrapper):
-    """
-    Postprocessor for Pokemon Pinball observations.
-    Handles observation transformation for PufferLib.
-    """
-    
-    def __init__(self, env):
-        """Initialize the postprocessor."""
-        super().__init__(env)
-        # Get observation shape
-        shape = env.observation_space.shape
         
-        # Handle frame-stacked observations
-        if len(shape) >= 3:  # (stack, height, width) or (height, width, stack)
-            if shape[-1] in [1, 3, 4]:  # Channels-last format
-                # Convert to channels-first (PufferLib standard)
-                self.channels_last = True
-                shape = (shape[-1], *shape[:-1])
-            else:
-                # Already in channels-first format
-                self.channels_last = False
-        else:  # Single frame (height, width)
-            # Add channel dimension
-            self.channels_last = False
-            shape = (1, *shape)
-        
-        # Update observation space
-        self.observation_space = spaces.Box(
-            low=0, high=255, shape=shape, dtype=np.uint8
-        )
-    
-    def _process_obs(self, obs):
-        """Process observation to channels-first format."""
-        if isinstance(obs, tuple):  # Handle frame stacks from gym
-            obs = np.array(obs)
-            
-        # Handle FrameStack wrapper output - already in (stack, h, w) format
-        if len(obs.shape) == 3 and obs.shape[0] == 4:  # 4 is the framestack value
-            # This is already in correct (stack, h, w) format for the CNN
-            return obs
-            
-        # Convert to channels-first format if needed
-        if self.channels_last and len(obs.shape) > 2:
-            if len(obs.shape) == 3:  # HWC -> CHW
-                return np.transpose(obs, (2, 0, 1))
-            else:
-                # Unknown format, just return as is
-                return obs
-        elif len(obs.shape) == 2:  # HW -> CHW
-            return np.expand_dims(obs, 0)
-        
-        return obs
-    
-    def reset(self, **kwargs):
-        """Reset the environment."""
-        obs, info = self.env.reset(**kwargs)
-        return self._process_obs(obs), info
-    
     def step(self, action):
-        """Take a step in the environment."""
-        obs, reward, terminal, truncated, info = self.env.step(action)
-        return self._process_obs(obs), reward, terminal, truncated, info
+        """Pass through step with dictionary observation intact."""
+        return self.env.step(action)
+        
+    def reset(self, **kwargs):
+        """Pass through reset with dictionary observation intact."""
+        return self.env.reset(**kwargs)
+
 
 
 class PinballPufferEnv(pufferlib.environment.PufferEnv):
@@ -213,7 +155,11 @@ class PinballPufferEnv(pufferlib.environment.PufferEnv):
             buf: Optional buffer for PufferLib
         """
         self.env = env
-        self.single_observation_space = env.observation_space
+        # Extract the game_area space from the Dict space
+        if isinstance(env.observation_space, spaces.Dict) and 'game_area' in env.observation_space.spaces:
+            self.single_observation_space = env.observation_space.spaces['game_area']
+        else:
+            self.single_observation_space = env.observation_space
         self.single_action_space = env.action_space
         self.num_agents = num_agents
         
@@ -244,8 +190,12 @@ class PinballPufferEnv(pufferlib.environment.PufferEnv):
         # Reset the environment
         obs, info = self.env.reset(seed=seed)
         
-        # Store the observation in the buffer
-        self.observations[0] = obs
+        # Store the observation in the buffer - extract game_area if using Dict observation space
+        if isinstance(obs, dict) and 'game_area' in obs:
+            # The game_area should now be correctly frame-stacked by the base environment
+            self.observations[0] = obs['game_area']
+        else:
+            self.observations[0] = obs
         
         # Reset episode tracking
         self.episode_returns = [0.0] * self.num_agents
@@ -266,8 +216,13 @@ class PinballPufferEnv(pufferlib.environment.PufferEnv):
         # Take the step with the first agent's action
         obs, reward, done, truncated, info = self.env.step(actions[0])
         
-        # Store results in buffers
-        self.observations[0] = obs
+        # Store results in buffers - extract game_area if using Dict observation space
+        if isinstance(obs, dict) and 'game_area' in obs:
+            # The game_area should now be correctly frame-stacked by the base environment
+            self.observations[0] = obs['game_area']
+        else:
+            self.observations[0] = obs
+            
         self.rewards[0] = reward
         self.terminals[0] = done
         self.truncations[0] = truncated

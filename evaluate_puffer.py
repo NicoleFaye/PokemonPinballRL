@@ -7,6 +7,7 @@ import argparse
 import os
 import sys
 import time
+import datetime
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +34,7 @@ except ImportError:
 # Import our environment and models
 from environment import make, env_creator
 from models import CNNPolicy, MLPPolicy, ResNetPolicy, Recurrent
+from training.logger import MetricLogger
 
 
 def parse_args():
@@ -52,6 +54,9 @@ def parse_args():
                         help="Reward shaping function to use")
     parser.add_argument("--framestack", type=int, default=4, help="Number of frames to stack")
     parser.add_argument("--frame-skip", type=int, default=4, help="Number of frames to skip")
+    parser.add_argument("--visual-mode", type=str, default="game_area", 
+                        choices=["game_area", "screen"],
+                        help="Visual observation mode (game_area or full screen)")
     parser.add_argument("--episodes", type=int, default=5, help="Number of episodes to evaluate")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu",
@@ -185,6 +190,23 @@ def evaluate_agent(args):
     all_returns = []
     all_episode_lengths = []
     
+    # Setup logger for evaluation metrics
+    eval_dir = Path(args.model).parent / "evaluation"
+    eval_dir.mkdir(exist_ok=True, parents=True)
+    eval_logger = MetricLogger(
+        log_dir=eval_dir,
+        metadata={
+            'model_path': str(args.model),
+            'episodes': args.episodes,
+            'policy_type': args.policy_type,
+            'recurrent': args.recurrent,
+            'reward_shaping': args.reward_shaping,
+            'framestack': args.framestack,
+            'frame_skip': args.frame_skip,
+            'evaluation_time': datetime.datetime.now().isoformat()
+        }
+    )
+    
     try:
         for episode in range(args.episodes):
             start_time = time.time()
@@ -230,6 +252,9 @@ def evaluate_agent(args):
                 episode_reward += reward
                 steps += 1
                 
+                # Log step to logger
+                eval_logger.log_step(reward)
+                
                 # Show progress for long episodes
                 if steps % 100 == 0:
                     print(f"  Step {steps}, Current reward: {episode_reward:.1f}")
@@ -243,6 +268,10 @@ def evaluate_agent(args):
             duration = time.time() - start_time
             all_returns.append(episode_reward)
             all_episode_lengths.append(steps)
+            
+            # Log completed episode
+            eval_logger.log_episode()
+            eval_logger.save_metrics_json()
             
             print(f"  Episode {episode+1} complete: "
                   f"Reward={episode_reward:.1f}, "
@@ -275,6 +304,13 @@ def evaluate_agent(args):
             print(f"Max reward: {np.max(all_returns):.1f}")
             print(f"Min reward: {np.min(all_returns):.1f}")
             print(f"Mean episode length: {np.mean(all_episode_lengths):.1f}")
+            
+            # Save final metrics
+            eval_logger.metadata['mean_reward'] = float(np.mean(all_returns))
+            eval_logger.metadata['max_reward'] = float(np.max(all_returns))
+            eval_logger.metadata['min_reward'] = float(np.min(all_returns))
+            eval_logger.metadata['mean_episode_length'] = float(np.mean(all_episode_lengths))
+            eval_logger.save()
     
 
 if __name__ == "__main__":

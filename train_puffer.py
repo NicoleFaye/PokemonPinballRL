@@ -28,6 +28,9 @@ except ImportError:
     print("or install from the requirements file: pip install -r requirements.txt")
     sys.exit(1)
 
+# Import our logger
+from training.logger import PufferMetricLogger
+
 
 # Import PyBoy
 try:
@@ -63,7 +66,7 @@ def parse_args():
                        help="Device to use (cuda or cpu)")
     
     # Model parameters
-    parser.add_argument("--policy-type", type=str, default="cnn", 
+    parser.add_argument("--policy-type", type=str, default="mlp", 
                         choices=["mlp", "cnn", "resnet"],
                         help="Policy network architecture")
     parser.add_argument("--recurrent", action="store_true", help="Use recurrent (LSTM) policy")
@@ -83,6 +86,9 @@ def parse_args():
                         choices=["basic", "catch_focused", "comprehensive"],
                         help="Reward shaping function to use")
     parser.add_argument("--headless", action="store_true", help="Run in headless mode (no visualization)")
+    parser.add_argument("--visual-mode", type=str, default="game_area", 
+                        choices=["game_area", "screen"],
+                        help="Visual observation mode (game_area or full screen)")
     
     # Checkpoint and logging
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint to resume from")
@@ -161,7 +167,8 @@ def main():
         "headless": args.headless,
         "reward_shaping": args.reward_shaping,
         "frame_skip": args.frame_skip,
-        "framestack": args.framestack 
+        "framestack": args.framestack,
+        "visual_mode": args.visual_mode
     }
     
     # Create the vectorized environment
@@ -176,13 +183,27 @@ def main():
         print(f"Created vectorized environment with {args.num_envs} environments")
     except Exception as e:
         print(f"Error creating vectorized environment: {e}")
-        return
+        print(f"environment_kwargs: {env_kwargs}")
+        raise
     
     # Create policy based on type
     if args.policy_type == "cnn":
         policy_cls = CNNPolicy
-        # Estimate flat size for CNN - default to Game Boy screen dimensions
-        flat_size = 64 * 5 * 6  # Default value, may need tuning
+        
+        # The flat size depends on whether we're using game_area or screen
+        if args.visual_mode == "game_area":
+            # For game_area (16x20), the CNN kernel sizes will need to handle this small input
+            # With downsampling=2, the input becomes too small for PufferLib's CNN
+            # Use a small flat size for the final convolution output
+            flat_size = 64 * 1 * 1
+            print(f"Using CNN with small flat_size={flat_size} for game_area mode")
+        else:
+            # For full screen (144x160 or downsampled to 72x80), use larger flat size
+            # This is closer to what the PufferLib CNN expects
+            # After convolutions with downsampling: ~5x6
+            flat_size = 64 * 5 * 6
+            print(f"Using CNN with flat_size={flat_size} for screen mode")
+            
         policy_kwargs = {
             "hidden_size": args.hidden_size,
             "framestack": args.framestack,
@@ -275,13 +296,36 @@ def main():
     
     print("Initializing PufferLib training...")
     
+    # Create logger for tracking metrics
+    logger = PufferMetricLogger(
+        log_dir=save_dir,
+        resume=args.checkpoint is not None,
+        metadata={
+            'environment': 'pokemon_pinball',
+            'policy_type': args.policy_type,
+            'recurrent': args.recurrent,
+            'reward_shaping': args.reward_shaping,
+            'framestack': args.framestack,
+            'frame_skip': args.frame_skip,
+            'num_envs': args.num_envs,
+            'seed': args.seed,
+            'lr': args.lr,
+            'gamma': args.gamma
+        },
+        json_save_freq=args.num_envs * args.num_steps * 5  # Save metrics every 5 epochs
+    )
+    
+    # Log configuration
+    logger.log_training_config(vars(args))
+    
     # Create PufferLib training data
-    data =   clean_pufferl.create(
+    data = clean_pufferl.create(
         pufferlib.namespace(**train_config),
         vecenv,
         policy,
         optimizer=optimizer,
-        wandb=wandb_run
+        wandb=wandb_run,
+        logger=logger
     )
     
     # Load checkpoint if specified
