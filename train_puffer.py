@@ -28,9 +28,6 @@ except ImportError:
     print("or install from the requirements file: pip install -r requirements.txt")
     sys.exit(1)
 
-# Import our logger
-from training.logger import PufferMetricLogger
-
 
 # Import PyBoy
 try:
@@ -296,27 +293,6 @@ def main():
     
     print("Initializing PufferLib training...")
     
-    # Create logger for tracking metrics
-    logger = PufferMetricLogger(
-        log_dir=save_dir,
-        resume=args.checkpoint is not None,
-        metadata={
-            'environment': 'pokemon_pinball',
-            'policy_type': args.policy_type,
-            'recurrent': args.recurrent,
-            'reward_shaping': args.reward_shaping,
-            'framestack': args.framestack,
-            'frame_skip': args.frame_skip,
-            'num_envs': args.num_envs,
-            'seed': args.seed,
-            'lr': args.lr,
-            'gamma': args.gamma
-        },
-        json_save_freq=args.num_envs * args.num_steps * 5  # Save metrics every 5 epochs
-    )
-    
-    # Log configuration
-    logger.log_training_config(vars(args))
     
     # Create PufferLib training data
     data = clean_pufferl.create(
@@ -324,8 +300,7 @@ def main():
         vecenv,
         policy,
         optimizer=optimizer,
-        wandb=wandb_run,
-        logger=logger
+        wandb=wandb_run
     )
     
     # Load checkpoint if specified
