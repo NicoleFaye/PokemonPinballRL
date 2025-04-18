@@ -154,11 +154,17 @@ class PufferWrapper(gym.Wrapper):
         self.returns += reward
         self.episode_length += 1
         
-        # Add additional info
+        # Add additional info - include both done and truncated conditions
+        is_terminal = done or truncated
         info.update({
-            'episode_return': self.returns if done else None,
-            'episode_length': self.episode_length if done else None
+            'episode_return': self.returns if is_terminal else None,
+            'episode_length': self.episode_length if is_terminal else None
         })
+        
+        # Reset tracking if episode is terminal
+        if is_terminal:
+            self.returns = 0
+            self.episode_length = 0
         
         return obs, reward, done, truncated, info
         
