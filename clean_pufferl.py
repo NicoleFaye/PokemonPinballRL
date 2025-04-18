@@ -305,11 +305,12 @@ def close(data):
     data.utilization.stop()
     config = data.config
     if data.wandb is not None:
+        import wandb as wandb_module
         artifact_name = f"{config.exp_id}_model"
-        artifact = data.wandb.Artifact(artifact_name, type="model")
+        artifact = wandb_module.Artifact(artifact_name, type="model")
         model_path = save_checkpoint(data)
         artifact.add_file(model_path)
-        data.wandb.run.log_artifact(artifact)
+        data.wandb.log_artifact(artifact)
         data.wandb.finish()
 
 class Profile:
