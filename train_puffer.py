@@ -39,6 +39,7 @@ except ImportError:
 
 # Import our models
 from models import CNNPolicy, MLPPolicy, ResNetPolicy, Recurrent
+from models.networks import SmallCNNPolicy
 # Import our environment
 from environment import make, env_creator
 
@@ -185,41 +186,42 @@ def main():
     
     # Create policy based on type
     if args.policy_type == "cnn":
-        policy_cls = CNNPolicy
-        
-        # The flat size depends on whether we're using game_area or screen
+        # The appropriate CNN architecture depends on whether we're using game_area or screen
         if args.visual_mode == "game_area":
-            # For game_area (16x20), the CNN kernel sizes will need to handle this small input
-            # With downsampling=2, the input becomes too small for PufferLib's CNN
-            # Use a small flat size for the final convolution output
-            flat_size = 64 * 1 * 1
-            print(f"Using CNN with small flat_size={flat_size} for game_area mode")
+            # For game_area (16x20), use a specialized small CNN with appropriate kernel sizes
+            print(f"Using SmallCNNPolicy for game_area mode")
+            # Create a direct SmallCNNPolicy instead of the PufferLib wrapper
+            policy = SmallCNNPolicy(
+                vecenv.driver_env.single_observation_space, 
+                hidden_size=args.hidden_size,
+                cnn_channels=32
+            )
         else:
-            # For full screen (144x160 or downsampled to 72x80), use larger flat size
-            # This is closer to what the PufferLib CNN expects
+            # For full screen mode, use the PufferLib CNN
+            policy_cls = CNNPolicy
             # After convolutions with downsampling: ~5x6
             flat_size = 64 * 5 * 6
             print(f"Using CNN with flat_size={flat_size} for screen mode")
             
-        policy_kwargs = {
-            "hidden_size": args.hidden_size,
-            "framestack": args.framestack,
-            "flat_size": flat_size
-        }
+            policy_kwargs = {
+                "hidden_size": args.hidden_size,
+                "framestack": args.framestack,
+                "flat_size": flat_size
+            }
+            policy = policy_cls(vecenv.driver_env, **policy_kwargs)
     elif args.policy_type == "resnet":
         policy_cls = ResNetPolicy
         policy_kwargs = {
             "cnn_width": 16,
             "mlp_width": args.hidden_size
         }
+        policy = policy_cls(vecenv.driver_env, **policy_kwargs)
     else:  # MLP
         policy_cls = MLPPolicy
         policy_kwargs = {
             "hidden_size": args.hidden_size
         }
-    
-    # Create policy
-    policy = policy_cls(vecenv.driver_env, **policy_kwargs)
+        policy = policy_cls(vecenv.driver_env, **policy_kwargs)
     
     # Wrap with LSTM if requested
     if args.recurrent:

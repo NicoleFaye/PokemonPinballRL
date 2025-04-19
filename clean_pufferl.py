@@ -160,34 +160,43 @@ def evaluate(data):
                     
                     # Extract Pokemon-specific metrics
                     if 'pokemon_caught' in episode_info:
-                        data.global_counters['total_pokemon_caught'] += episode_info['pokemon_caught']
+                        # Check if pokemon_caught is a list and get its first element
+                        pokemon_caught = episode_info['pokemon_caught'][0] if isinstance(episode_info['pokemon_caught'], list) else episode_info['pokemon_caught']
+                        data.global_counters['total_pokemon_caught'] += int(pokemon_caught)
                     
                     if 'evolutions' in episode_info:
-                        data.global_counters['total_evolutions'] += episode_info['evolutions']
+                        # Check if evolutions is a list and get its first element
+                        evolutions = episode_info['evolutions'][0] if isinstance(episode_info['evolutions'], list) else episode_info['evolutions']
+                        data.global_counters['total_evolutions'] += int(evolutions)
                     
                     # Sum up stages completed
                     total_stages = 0
                     for stage_type in ['diglett_stages', 'gengar_stages', 'meowth_stages', 
                                      'seel_stages', 'mewtwo_stages']:
                         if stage_type in episode_info:
-                            total_stages += episode_info[stage_type]
+                            stage_value = episode_info[stage_type][0] if isinstance(episode_info[stage_type], list) else episode_info[stage_type]
+                            total_stages += int(stage_value)
                     data.global_counters['total_stages_completed'] += total_stages
                     
                     # Sum up ball upgrades
                     total_upgrades = 0
                     for upgrade_type in ['great_ball_upgrades', 'ultra_ball_upgrades', 'master_ball_upgrades']:
                         if upgrade_type in episode_info:
-                            total_upgrades += episode_info[upgrade_type]
+                            upgrade_value = episode_info[upgrade_type][0] if isinstance(episode_info[upgrade_type], list) else episode_info[upgrade_type]
+                            total_upgrades += int(upgrade_value)
                     data.global_counters['total_ball_upgrades'] += total_upgrades
                     
                     # Store score
                     if 'score' in episode_info:
-                        data.global_counters['total_points_scored'] += episode_info['score']
+                        score = episode_info['score'][0] if isinstance(episode_info['score'], list) else episode_info['score']
+                        data.global_counters['total_points_scored'] += int(score)
         
         # Process regular stats
         for k, v in infos.items():
             if '_map' in k and data.wandb is not None:
-                data.stats[f'Media/{k}'] = data.wandb.Image(v[0])
+                # Import wandb directly to access the Image class
+                import wandb
+                data.stats[f'Media/{k}'] = wandb.Image(v[0])
                 continue
 
             if isinstance(v, np.ndarray):
@@ -364,8 +373,10 @@ def mean_and_log(data):
             
             # Create histograms for distributions
             if len(episode_lengths) >= 3:
-                episode_metrics['episodes/length_hist'] = data.wandb.Histogram(episode_lengths)
-                episode_metrics['episodes/score_hist'] = data.wandb.Histogram(episode_scores)
+                # Import wandb directly here to access the Histogram class
+                import wandb
+                episode_metrics['episodes/length_hist'] = wandb.Histogram(episode_lengths)
+                episode_metrics['episodes/score_hist'] = wandb.Histogram(episode_scores)
         
         # More detailed stats if available
         pokemon_caught = [info.get('pokemon_caught', [0])[0] for info in data.episode_infos]

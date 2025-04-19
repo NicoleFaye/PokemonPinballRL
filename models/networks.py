@@ -16,6 +16,7 @@ class SmallCNNPolicy(nn.Module):
     """
     Small CNN policy optimized for the tiny game area (16x20) in Pokemon Pinball.
     Uses smaller kernel sizes and strides to handle the small input dimensions.
+    This version is compatible with PufferLib's interface.
     """
     
     def __init__(self, env, hidden_size=512, cnn_channels=16):
@@ -30,7 +31,7 @@ class SmallCNNPolicy(nn.Module):
         super().__init__()
         
         # Extract observation shape
-        obs_shape = env.observation_space.shape
+        obs_shape = env.shape
         
         # Determine if we have a frame-stacked observation (height, width, frames)
         if len(obs_shape) == 3:
@@ -62,7 +63,7 @@ class SmallCNNPolicy(nn.Module):
         self.actor = nn.Sequential(
             layer_init(nn.Linear(conv_output_size, hidden_size)),
             nn.ReLU(),
-            layer_init(nn.Linear(hidden_size, env.action_space.n), std=0.01)
+            layer_init(nn.Linear(hidden_size, 10), std=0.01)  # 10 is the number of actions in PokemonPinballEnv
         )
         
         # Critic (value) head
@@ -72,21 +73,38 @@ class SmallCNNPolicy(nn.Module):
             layer_init(nn.Linear(hidden_size, 1), std=1.0)
         )
             
-    def forward(self, x):
+    def forward(self, observations, action=None):
         """
         Forward pass through the network.
+        Implements PufferLib-compatible interface.
         
         Args:
-            x: Input tensor (B, H, W, C) - channels last format from game_area
+            observations: Input observations tensor (B, H, W, C) or dict
+            action: Optional actions for training
             
         Returns:
-            Tuple of (logits, value)
+            Different return values depending on mode:
+            - During evaluation: (actions, logprobs, entropy, value)
+            - During training with provided actions: (None, logprobs, entropy, value)
         """
+        # Handle dict observation (from PufferLib)
+        if isinstance(observations, dict):
+            x = observations["game_area"]
+        else:
+            x = observations
+            
+        # Ensure correct dimensions and format
+        if len(x.shape) > 4:
+            batch_size = x.shape[0]
+            x = x.reshape(batch_size, *x.shape[2:])
+        
         # x is in shape (batch, height, width, channels) - convert to channels first
-        x = x.permute(0, 3, 1, 2)
+        if len(x.shape) == 4:
+            x = x.permute(0, 3, 1, 2)
         
         # Normalize input to [0, 1]
-        x = x.float() / 255.0
+        if x.dtype == torch.uint8:
+            x = x.float() / 255.0
             
         # Extract features
         features = self.features(x)
@@ -95,6 +113,52 @@ class SmallCNNPolicy(nn.Module):
         logits = self.actor(features)
         value = self.critic(features)
         
+        # Create categorical distribution
+        action_probs = torch.softmax(logits, dim=-1)
+        action_dist = torch.distributions.Categorical(action_probs)
+        
+        # Handle different modes
+        if action is None:
+            # Evaluation mode - sample actions
+            actions = action_dist.sample()
+            logprobs = action_dist.log_prob(actions)
+            entropy = action_dist.entropy()
+            return actions, logprobs, entropy, value
+        else:
+            # Training mode - use provided actions
+            logprobs = action_dist.log_prob(action)
+            entropy = action_dist.entropy()
+            return None, logprobs, entropy, value
+        
+    def encode_observations(self, observations):
+        """Encode observations for PufferLib compatibility."""
+        # Handle dict observation
+        if isinstance(observations, dict):
+            x = observations["game_area"]
+        else:
+            x = observations
+            
+        # Ensure correct dimensions
+        if len(x.shape) > 4:
+            batch_size = x.shape[0]
+            x = x.reshape(batch_size, *x.shape[2:])
+        
+        # x is in shape (batch, height, width, channels) - convert to channels first
+        if len(x.shape) == 4:
+            x = x.permute(0, 3, 1, 2)
+        
+        # Normalize input to [0, 1]
+        if x.dtype == torch.uint8:
+            x = x.float() / 255.0
+            
+        # Extract features
+        features = self.features(x)
+        return features, None
+        
+    def decode_actions(self, features, lookup):
+        """Decode actions for PufferLib compatibility."""
+        logits = self.actor(features)
+        value = self.critic(features)
         return logits, value
 
 
