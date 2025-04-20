@@ -121,7 +121,7 @@ def evaluate(data):
                 lstm_h[:, env_id] = h
                 lstm_c[:, env_id] = c
             else:
-                actions, logprob, _, value = policy(o_device)
+                actions, logprob, entropy, value = policy(o_device)
 
             if config.device == 'cuda':
                 torch.cuda.synchronize()
@@ -251,10 +251,18 @@ def train(data):
                         obs, state=lstm_state, action=atn)
                     lstm_state = (lstm_state[0].detach(), lstm_state[1].detach())
                 else:
-                    _, newlogprob, entropy, newvalue = data.policy(
-                        obs.reshape(-1, *data.vecenv.single_observation_space.shape),
-                        action=atn,
-                    )
+                    if hasattr(data.policy, 'forward_for_pufferlib_lstm'):
+                        # Reshape observations to the expected shape
+                        reshaped_obs = obs.reshape(-1, *data.vecenv.single_observation_space.shape)
+                        _, newlogprob, entropy, newvalue = data.policy.forward_for_pufferlib_lstm(
+                            reshaped_obs,
+                            action=atn,
+                        )
+                    else:
+                        _, newlogprob, entropy, newvalue = data.policy(
+                            obs.reshape(-1, *data.vecenv.single_observation_space.shape),
+                            action=atn,
+                        )
 
                 if config.device == 'cuda':
                     torch.cuda.synchronize()
