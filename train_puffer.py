@@ -166,19 +166,35 @@ def main():
         "reward_shaping": args.reward_shaping,
         "frame_skip": args.frame_skip,
         "framestack": args.framestack,
-        "visual_mode": args.visual_mode
+        "visual_mode": args.visual_mode,
+        "is_driver": False  # Default for workers
     }
     
     # Create the vectorized environment
     print("Creating vectorized environment...")
     try:
+        # Configure multiprocessing for PyBoy/SDL2 compatibility
+        if not args.headless:
+            print("Setting up non-headless mode with SDL2 - configuring process start method")
+            # Force 'spawn' method for better SDL2/PyBoy compatibility in multi-process mode
+            import multiprocessing
+            # Only set if not already configured
+            if multiprocessing.get_start_method() != 'spawn':
+                try:
+                    multiprocessing.set_start_method('spawn', force=True)
+                    print("Set multiprocessing start method to 'spawn' for SDL2 compatibility")
+                except RuntimeError:
+                    print("Warning: Could not set multiprocessing start method to 'spawn'")
+                    print("This might cause display issues with PyBoy/SDL2")
+        
+        # Create vectorized environment
+        print("Creating worker environments...")
         vecenv = pufferlib.vector.make(
             make_env,
             env_kwargs=env_kwargs,
             num_envs=args.num_envs,
             backend=pufferlib.vector.Multiprocessing
         )
-        print(f"Created vectorized environment with {args.num_envs} environments")
     except Exception as e:
         print(f"Error creating vectorized environment: {e}")
         print(f"environment_kwargs: {env_kwargs}")
