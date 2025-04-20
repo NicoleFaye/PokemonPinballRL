@@ -570,85 +570,48 @@ class PokemonPinballEnv(gym.Env):
         
         This ensures each environment instance maintains its own tracking state.
         """
-        # Determine which reward shaping to use and manage the state within the environment
-        if reward_function == RewardShaping.basic:
-            return self._fitness - self._previous_fitness
-            
-        elif reward_function == RewardShaping.catch_focused:
-            score_reward = (self._fitness - self._previous_fitness) * 0.5
-            
-            # Big reward for catching Pokemon
-            catch_reward = 0
-            if self._game_wrapper.pokemon_caught_in_session > self._prev_caught:
-                catch_reward = 1000
-                self._prev_caught = self._game_wrapper.pokemon_caught_in_session
-                
-            return score_reward + catch_reward
-            
-        elif reward_function == RewardShaping.comprehensive:
-            # Log-scaled score difference
-            score_diff = self._fitness - self._previous_fitness
-            if score_diff > 0:
-                import numpy as np
-                score_reward = 15 * np.log(1 + score_diff / 100)
-            else:
-                score_reward = 0
-
-            # Ball alive reward and survival bonus
-            ball_alive_reward = 25
-            time_bonus = min(120, self._frames_played / 400)
-
-            additional_reward = 0
-            reward_sources = {}
-
-            # Catching Pokémon
-            if self._game_wrapper.pokemon_caught_in_session > self._prev_caught:
-                pokemon_reward = 500
-                additional_reward += pokemon_reward
-                reward_sources["pokemon_catch"] = pokemon_reward
-                self._prev_caught = self._game_wrapper.pokemon_caught_in_session
-
-            # Evolution rewards
-            if self._game_wrapper.evolution_success_count > self._prev_evolutions:
-                evolution_reward = 1000
-                additional_reward += evolution_reward
-                reward_sources["evolution"] = evolution_reward
-                self._prev_evolutions = self._game_wrapper.evolution_success_count
-
-            # Stage completion
-            total_stages_completed = (
-                self._game_wrapper.diglett_stages_completed +
-                self._game_wrapper.gengar_stages_completed +
-                self._game_wrapper.meowth_stages_completed +
-                self._game_wrapper.seel_stages_completed +
-                self._game_wrapper.mewtwo_stages_completed
-            )
-            if total_stages_completed > self._prev_stages_completed:
-                stage_reward = 1500
-                additional_reward += stage_reward
-                reward_sources["stage_completion"] = stage_reward
-                self._prev_stages_completed = total_stages_completed
-
-            # Ball upgrades
-            ball_upgrades = (
-                self._game_wrapper.great_ball_upgrades +
-                self._game_wrapper.ultra_ball_upgrades +
-                self._game_wrapper.master_ball_upgrades
-            )
-            if ball_upgrades > self._prev_ball_upgrades:
-                upgrade_reward = 200
-                additional_reward += upgrade_reward
-                reward_sources["ball_upgrade"] = upgrade_reward
-                self._prev_ball_upgrades = ball_upgrades
-
-            # Combine all rewards
-            total_reward = score_reward + additional_reward + ball_alive_reward + time_bonus
-
-            return total_reward
-            
-        else:
-            # Fallback to basic reward
-            return self._fitness - self._previous_fitness
+        # Create a state dictionary to pass to the reward functions
+        # This captures the current state of the reward trackers
+        reward_state = {
+            'prev_caught': self._prev_caught,
+            'prev_evolutions': self._prev_evolutions,
+            'prev_stages_completed': self._prev_stages_completed,
+            'prev_ball_upgrades': self._prev_ball_upgrades
+        }
+        
+        # Call the appropriate reward function with instance state
+        reward = reward_function(
+            self._fitness, 
+            self._previous_fitness, 
+            self._game_wrapper, 
+            self._frames_played,
+            reward_state
+        )
+        
+        # Update the instance variables based on current game state
+        # This ensures each environment instance maintains its own tracking variables
+        self._prev_caught = self._game_wrapper.pokemon_caught_in_session
+        self._prev_evolutions = self._game_wrapper.evolution_success_count
+        
+        # Calculate total stages completed
+        total_stages_completed = (
+            self._game_wrapper.diglett_stages_completed +
+            self._game_wrapper.gengar_stages_completed +
+            self._game_wrapper.meowth_stages_completed +
+            self._game_wrapper.seel_stages_completed +
+            self._game_wrapper.mewtwo_stages_completed
+        )
+        self._prev_stages_completed = total_stages_completed
+        
+        # Calculate total ball upgrades
+        ball_upgrades = (
+            self._game_wrapper.great_ball_upgrades +
+            self._game_wrapper.ultra_ball_upgrades +
+            self._game_wrapper.master_ball_upgrades
+        )
+        self._prev_ball_upgrades = ball_upgrades
+        
+        return reward
         
     def _check_if_stuck(self, observation):
         """
@@ -706,30 +669,61 @@ class PokemonPinballEnv(gym.Env):
 class RewardShaping:
     """
     Collection of reward shaping functions for Pokemon Pinball.
-    These can be passed to the environment to modify the reward structure.
+    These methods operate on the environment instance to ensure proper per-instance state tracking.
     """
     
     @staticmethod
-    def basic(current_fitness, previous_fitness, game_wrapper, frames_played=0):
+    def basic(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
         """Basic reward shaping based on score difference."""
         return current_fitness - previous_fitness
+    
+    @staticmethod
+    def catch_focused(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
+        """
+        Reward focused on catching Pokemon.
         
-    @classmethod
-    def catch_focused(cls, current_fitness, previous_fitness, game_wrapper, frames_played=0):
-        """Reward focused on catching Pokemon."""
+        Args:
+            current_fitness: Current score
+            previous_fitness: Previous score
+            game_wrapper: Game wrapper instance
+            frames_played: Number of frames played
+            prev_state: Dictionary containing previous state values for tracking
+        """
+        # If no state is passed, create empty state (should never happen since state is managed by environment)
+        if prev_state is None:
+            prev_state = {'prev_caught': 0}
+            
         score_reward = (current_fitness - previous_fitness) * 0.5
         
         # Big reward for catching Pokemon
         catch_reward = 0
-        if game_wrapper.pokemon_caught_in_session > cls._prev_caught:
+        if game_wrapper.pokemon_caught_in_session > prev_state.get('prev_caught', 0):
             catch_reward = 1000
-            cls._prev_caught = game_wrapper.pokemon_caught_in_session
+            # Note: we don't modify prev_state here, as the caller is responsible for tracking it
             
         return score_reward + catch_reward
+    
+    @staticmethod
+    def comprehensive(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
+        """
+        Comprehensive reward that promotes long survival and steady progress.
         
-    @classmethod
-    def comprehensive(cls, current_fitness, previous_fitness, game_wrapper, frames_played=0):
-        """Comprehensive reward that promotes long survival and steady progress."""
+        Args:
+            current_fitness: Current score
+            previous_fitness: Previous score
+            game_wrapper: Game wrapper instance
+            frames_played: Number of frames played
+            prev_state: Dictionary containing previous state values for tracking
+        """
+        # If no state is passed, create empty state (should never happen since state is managed by environment)
+        if prev_state is None:
+            prev_state = {
+                'prev_caught': 0,
+                'prev_evolutions': 0, 
+                'prev_stages_completed': 0,
+                'prev_ball_upgrades': 0
+            }
+            
         # Log-scaled score difference
         score_diff = current_fitness - previous_fitness
         if score_diff > 0:
@@ -746,18 +740,20 @@ class RewardShaping:
         reward_sources = {}
 
         # Catching Pokémon
-        if game_wrapper.pokemon_caught_in_session > cls._prev_caught:
+        prev_caught = prev_state.get('prev_caught', 0)
+        if game_wrapper.pokemon_caught_in_session > prev_caught:
             pokemon_reward = 500
             additional_reward += pokemon_reward
             reward_sources["pokemon_catch"] = pokemon_reward
-            cls._prev_caught = game_wrapper.pokemon_caught_in_session
+            # Note: we don't modify prev_state here, as the caller is responsible for tracking it
 
         # Evolution rewards
-        if game_wrapper.evolution_success_count > cls._prev_evolutions:
+        prev_evolutions = prev_state.get('prev_evolutions', 0)
+        if game_wrapper.evolution_success_count > prev_evolutions:
             evolution_reward = 1000
             additional_reward += evolution_reward
             reward_sources["evolution"] = evolution_reward
-            cls._prev_evolutions = game_wrapper.evolution_success_count
+            # State is updated by the environment
 
         # Stage completion
         total_stages_completed = (
@@ -767,11 +763,12 @@ class RewardShaping:
             game_wrapper.seel_stages_completed +
             game_wrapper.mewtwo_stages_completed
         )
-        if total_stages_completed > cls._prev_stages_completed:
+        prev_stages_completed = prev_state.get('prev_stages_completed', 0)
+        if total_stages_completed > prev_stages_completed:
             stage_reward = 1500
             additional_reward += stage_reward
             reward_sources["stage_completion"] = stage_reward
-            cls._prev_stages_completed = total_stages_completed
+            # State is updated by the environment
 
         # Ball upgrades
         ball_upgrades = (
@@ -779,11 +776,12 @@ class RewardShaping:
             game_wrapper.ultra_ball_upgrades +
             game_wrapper.master_ball_upgrades
         )
-        if ball_upgrades > cls._prev_ball_upgrades:
+        prev_ball_upgrades = prev_state.get('prev_ball_upgrades', 0)
+        if ball_upgrades > prev_ball_upgrades:
             upgrade_reward = 200
             additional_reward += upgrade_reward
             reward_sources["ball_upgrade"] = upgrade_reward
-            cls._prev_ball_upgrades = ball_upgrades
+            # State is updated by the environment
 
         # Combine all rewards
         total_reward = score_reward + additional_reward + ball_alive_reward + time_bonus
