@@ -38,7 +38,7 @@ def env_creator(name='pokemon_pinball'):
 
 def make(name, rom_path=None, headless=True, reward_shaping="comprehensive", 
          frame_skip=4, framestack=4, render_mode="rgb_array", visual_mode="game_area",
-         reduce_screen_resolution=True, buf=None):
+         reduce_screen_resolution=True, buf=None, is_driver=False):
     """
     Create a PufferLib-compatible Pokemon Pinball environment.
     
@@ -53,16 +53,53 @@ def make(name, rom_path=None, headless=True, reward_shaping="comprehensive",
         visual_mode: Visual observation mode ("game_area" or "screen")
         reduce_screen_resolution: Whether to downsample screen images
         buf: Optional buffer for PufferLib
+        is_driver: Whether this env is a PufferLib driver env (for observation space inspection)
         
     Returns:
         PufferLib-compatible environment
     """
+    # Force headless mode for driver environments to avoid creating unnecessary windows
+    if is_driver:
+        headless = True
     if not PYBOY_AVAILABLE:
         raise ImportError("PyBoy is not installed. Please install it with 'pip install pyboy'.")
         
     if rom_path is None:
         raise ValueError("ROM path must be provided")
+    
+    # Configure SDL2 environment variables to avoid conflicts with multiprocessing
+    # This is necessary when running non-headless mode with multiple environments
+    if not headless:
+        import os
         
+        # These environment settings help prevent X11/XCB threading issues
+        os.environ["SDL_AUDIODRIVER"] = "dummy"  # Disable audio to prevent conflicts
+        # Fixes for X server threading issues with SDL2
+        os.environ["SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR"] = "0"
+        
+        # Get process ID - we'll use this to position windows
+        pid = os.getpid()
+        
+        # Set window position based on PID to avoid overlap
+        # Use a simple spacing formula to create a grid
+        x_step = 160  # Window width
+        y_step = 160  # Window height
+        grid_size = 3  # 3x3 grid
+        
+        # Create a unique hash from PID for stable positions
+        hash_val = (pid * 13) % (grid_size * grid_size)
+        
+        # Calculate position in grid
+        row = hash_val // grid_size
+        col = hash_val % grid_size
+        
+        # Calculate position with slight offset
+        x_pos = 50 + (col * x_step)
+        y_pos = 50 + (row * y_step)
+        
+        # Set window position
+        os.environ["SDL_VIDEO_WINDOW_POS"] = f"{x_pos},{y_pos}"
+        print(f"Setting window position for PID {pid} to {x_pos},{y_pos}")
     
     # Determine reward shaping function
     if isinstance(reward_shaping, str):
@@ -77,8 +114,9 @@ def make(name, rom_path=None, headless=True, reward_shaping="comprehensive",
     else:
         reward_fn = reward_shaping
     
+    
     config = {
-        "debug" : False,
+        "debug": False,
         "headless": headless,
         "reward_shaping": reward_fn,
         "frame_skip": frame_skip,

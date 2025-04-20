@@ -54,6 +54,9 @@ class PokemonPinballEnv(gym.Env):
     
     metadata = {"render_modes": ["human"]}
     
+    # Class variable to keep track of the number of environment instances
+    instance_count = 0
+    
     def __init__(self, rom_path="pokemon_pinball.gbc", config=DEFAULT_CONFIG ): 
         """
         Initialize the Pokemon Pinball environment.
@@ -66,6 +69,37 @@ class PokemonPinballEnv(gym.Env):
             info_level: Level of detail in info dict (0-3, higher=more info but slower)
         """
         super().__init__()
+        
+        # Increment the instance count when a new environment is created
+        PokemonPinballEnv.instance_count += 1
+        # Store the instance ID
+        self.instance_id = PokemonPinballEnv.instance_count
+        
+        import os
+        pid = os.getpid()
+        
+        # Only try to detect driver environment in the first instance per process
+        # We'll limit this to just the main thread in the main process
+        if self.instance_id == 1:
+            import traceback
+            
+            # Look at the call stack - if this is being created by PufferLib vector
+            # initialization code for driver/observation space purposes, make it headless
+            is_driver = False
+            
+            # Check the call stack for driver environment patterns
+            stack = traceback.extract_stack()
+            for frame in stack:
+                if any(x in frame.filename for x in ['pufferlib/vector.py', 'pufferlib/environment.py']):
+                    if any(x in frame.name for x in ['make', '_create_driver', '_reset_env']):
+                        is_driver = True
+                        break
+            
+            if is_driver:
+                print(f"Detected driver environment in PID {pid} - forcing headless mode")
+                config['headless'] = True
+                
+        print(f"Creating PokemonPinballEnv instance {self.instance_id} in process {pid}")
         window_type = "null" if config['headless'] else "SDL2"
         self.pyboy = PyBoy(rom_path, window=window_type, sound_emulated=False)
         if self.pyboy is None:
@@ -350,6 +384,13 @@ class PokemonPinballEnv(gym.Env):
     def close(self):
         """Close the environment and stop PyBoy."""
         self.pyboy.stop()
+        # Decrement the instance count when an environment is closed
+        PokemonPinballEnv.instance_count = max(0, PokemonPinballEnv.instance_count - 1)
+        
+    @classmethod
+    def get_instance_count(cls):
+        """Get the current number of environment instances."""
+        return cls.instance_count
         
     def _get_info(self):
         """Get additional information from the environment."""
