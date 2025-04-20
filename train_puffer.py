@@ -288,7 +288,7 @@ def main():
         "compile": False,
         "zero_copy": args.device == "cuda",
         "env_batch_size": 1,
-        "bptt_horizon": 128 if args.recurrent else 1,  # Use 1 for non-recurrent to avoid division by zero was originally zero not sure what this even is 
+        "bptt_horizon": 32 if args.recurrent else 1,  # Adjust to ensure minibatch_size is divisible by bptt_horizon
         "seed": args.seed,
         "torch_deterministic": True,
     }
