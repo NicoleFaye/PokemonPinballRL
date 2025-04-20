@@ -28,6 +28,49 @@ class Recurrent(pufferlib.models.LSTMWrapper):
             num_layers: Number of LSTM layers
         """
         super().__init__(env, policy, input_size, hidden_size, num_layers)
+        
+    def forward_for_pufferlib_lstm(self, x, action=None):
+        """
+        Special forward method for non-recurrent inference paths.
+        Used when LSTM state is not available/needed.
+        
+        Args:
+            x: Input tensor of observations
+            action: Optional actions tensor for training
+            
+        Returns:
+            Tuple of (actions, logprobs, entropy, values) matching the format
+            expected by clean_pufferl's evaluate function.
+        """
+        # Create initial zero state
+        batch_size = x.shape[0]
+        empty_state = (
+            torch.zeros(self.recurrent.num_layers, batch_size, self.hidden_size).to(x.device),
+            torch.zeros(self.recurrent.num_layers, batch_size, self.hidden_size).to(x.device)
+        )
+        
+        # Use the standard forward from parent class
+        hidden, value, _ = super().forward(x, empty_state)
+        
+        # Create categorical distribution from logits
+        action_probs = torch.softmax(hidden, dim=-1)
+        action_dist = torch.distributions.Categorical(action_probs)
+        
+        if action is None:
+            # Evaluation mode - sample actions
+            actions = action_dist.sample()
+            logprobs = action_dist.log_prob(actions)
+            entropy = action_dist.entropy()
+            return actions, logprobs, entropy, value
+        else:
+            # Training mode - use provided actions
+            # Reshape the action to match the batch size of our output
+            if action.shape != (batch_size,):
+                # Flatten the action tensor if needed
+                action = action.reshape(-1)
+            logprobs = action_dist.log_prob(action)
+            entropy = action_dist.entropy()
+            return None, logprobs, entropy, value
 
 
 class CNNPolicy(pufferlib.models.Convolutional):
@@ -61,6 +104,39 @@ class CNNPolicy(pufferlib.models.Convolutional):
             # Add downsampling to reduce resolution further
             downsample=2  # Downsample by factor of 2
         )
+        
+    def forward(self, observations, action=None):
+        """
+        Forward pass through the network.
+        
+        Args:
+            observations: Input observations tensor
+            action: Optional actions tensor for training
+        
+        Returns:
+            Different return values depending on mode:
+            - During evaluation: (actions, logprobs, entropy, value)
+            - During training with provided actions: (None, logprobs, entropy, value)
+        """
+        # Call the parent class's forward method which returns (logits, value)
+        logits, value = super().forward(observations)
+        
+        # Create categorical distribution
+        action_probs = torch.softmax(logits, dim=-1)
+        action_dist = torch.distributions.Categorical(action_probs)
+        
+        # Handle different modes
+        if action is None:
+            # Evaluation mode - sample actions
+            actions = action_dist.sample()
+            logprobs = action_dist.log_prob(actions)
+            entropy = action_dist.entropy()
+            return actions, logprobs, entropy, value
+        else:
+            # Training mode - use provided actions
+            logprobs = action_dist.log_prob(action)
+            entropy = action_dist.entropy()
+            return None, logprobs, entropy, value
 
 
 class MLPPolicy(nn.Module):
@@ -182,3 +258,36 @@ class ResNetPolicy(pufferlib.models.ProcgenResnet):
             cnn_width=cnn_width,
             mlp_width=mlp_width,
         )
+        
+    def forward(self, observations, action=None):
+        """
+        Forward pass through the network.
+        
+        Args:
+            observations: Input observations tensor
+            action: Optional actions tensor for training
+        
+        Returns:
+            Different return values depending on mode:
+            - During evaluation: (actions, logprobs, entropy, value)
+            - During training with provided actions: (None, logprobs, entropy, value)
+        """
+        # Call the parent class's forward method which returns (logits, value)
+        logits, value = super().forward(observations)
+        
+        # Create categorical distribution
+        action_probs = torch.softmax(logits, dim=-1)
+        action_dist = torch.distributions.Categorical(action_probs)
+        
+        # Handle different modes
+        if action is None:
+            # Evaluation mode - sample actions
+            actions = action_dist.sample()
+            logprobs = action_dist.log_prob(actions)
+            entropy = action_dist.entropy()
+            return actions, logprobs, entropy, value
+        else:
+            # Training mode - use provided actions
+            logprobs = action_dist.log_prob(action)
+            entropy = action_dist.entropy()
+            return None, logprobs, entropy, value
