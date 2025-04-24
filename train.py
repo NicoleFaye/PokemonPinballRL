@@ -1,6 +1,6 @@
 import sys
 from os.path import exists
-from os import _exit
+from os import _exit, makedirs
 from pathlib import Path
 import suppress_warnings  # Import the warning suppression module first
 from stable_baselines3 import PPO
@@ -70,17 +70,50 @@ if __name__ == "__main__":
     if use_wandb_logging:
         import wandb
         from wandb.integration.sb3 import WandbCallback
-        wandb.tensorboard.patch(root_logdir=str(sess_path))
+        
+        # Make sure runs directory exists
+        makedirs("./runs", exist_ok=True)
+        
+        # Patch TensorBoard at the root level to capture all grouped metrics
+        wandb.tensorboard.patch(root_logdir="./runs")
+        
+        # Initialize WandB
         run = wandb.init(
             project="pokemon-train",
             id=sess_id,
             name=sess_id,
             config=env_config,
-            sync_tensorboard=True,  
-            monitor_gym=True,  
+            sync_tensorboard=True,
+            monitor_gym=True,
             save_code=True,
+            dir="./runs",  # Set the wandb directory to avoid nesting
         )
-        callbacks.append(WandbCallback())
+        
+        # Create notes explaining the metrics and x-axis
+        run.notes = """
+## Pokemon Pinball RL Training Metrics Guide
+
+**X-axis in graphs**: "Step" in WandB refers to environment timesteps (individual actions), not episodes.
+
+### Metric Groups:
+1. **episode_metrics/**: Raw values for each completed episode
+2. **rolling_averages/**: Smoothed metrics over multiple episodes (window size = 20)
+3. **episode_tracking/**: Relationship between timesteps and episodes
+
+### Key Metrics:
+- **episode_tracking/total_episodes_completed**: How many full episodes have been played
+- **episode_tracking/ratio_timesteps_per_episode**: Average timesteps needed to complete an episode
+- **episode_tracking/total_environment_timesteps**: Total action steps taken across all environments
+
+### Understanding Steps vs Episodes:
+- WandB's x-axis "Step" = Environment timesteps (individual actions)
+- One complete game/episode typically contains many timesteps
+- Example: At step 50,000 you might have completed ~165 episodes if each takes ~300 timesteps
+"""
+        
+        # Configure WandB callback with minimal options
+        wandb_callback = WandbCallback(verbose=1)
+        callbacks.append(wandb_callback)
 
     #env_checker.check_env(env)
 
@@ -101,12 +134,18 @@ if __name__ == "__main__":
         model.rollout_buffer.n_envs = num_cpu
         model.rollout_buffer.reset()
     else:
-        model = PPO("MultiInputPolicy", env, verbose=1, n_steps=train_steps_batch, batch_size=512, n_epochs=1, gamma=0.997, ent_coef=0.01, tensorboard_log=sess_path)
+        # Set PPO to log directly to the metrics directory, without any prefix
+        model = PPO("MultiInputPolicy", env, verbose=1, n_steps=train_steps_batch, batch_size=512, n_epochs=1, 
+              gamma=0.997, ent_coef=0.01, tensorboard_log=None)
+              
+        # Configure the logger manually - use main runs directory
+        from stable_baselines3.common.logger import configure
+        model.set_logger(configure("./runs", ["stdout", "tensorboard"]))
     
     print(model.policy)
 
-    # Use the sess_id as the tensorboard run name instead of hardcoded "poke_ppo"
-    model.learn(total_timesteps=(ep_length)*num_cpu*10000, callback=CallbackList(callbacks), tb_log_name=sess_id)
+    # Don't specify a tb_log_name to avoid the prefix altogether
+    model.learn(total_timesteps=(ep_length)*num_cpu*10000, callback=CallbackList(callbacks))
 
     if use_wandb_logging:
         run.finish()

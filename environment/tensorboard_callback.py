@@ -42,30 +42,59 @@ class TensorboardCallback(BaseCallback):
         self.pokemon_caught_buffer = []
         self.ball_upgrades_buffer = []
         
-        # Counter for global steps
+        # Counter for global steps and episodes
         self.global_step = 0
+        self.episode_count = 0
+        self.total_timesteps = 0
+        
+        # Keep track of step-to-episode conversion
+        self.steps_per_episode = []
 
     def _on_training_start(self):
-        """Initialize the TensorBoard writer when training starts."""
-        if self.writer is None:
-            self.writer = SummaryWriter(log_dir=os.path.join(self.log_dir, 'metrics'))
+        """Initialize the model reference and custom panels when training starts."""
+        # Get a reference to the model
+        self.model = self.locals.get('self')
+        
+        # Add custom panel to WandB if available
+        try:
+            import wandb
+            if wandb.run is not None:
+                # Add a custom panel to make the step vs episode relationship clear
+                wandb.run.config.update({
+                    "IMPORTANT_NOTE": "In WandB graphs, 'Step' on x-axis means environment timesteps, not episodes"
+                })
+        except (ImportError, AttributeError):
+            pass
 
     def _on_step(self) -> bool:
         """
         Called at each environment step during training.
         Checks if any environment completed an episode and logs metrics accordingly.
         """
-        # Increment global step counter
-        self.global_step += 1
+        # Use the model num_timesteps as global step 
+        if hasattr(self.model, 'num_timesteps'):
+            self.global_step = self.model.num_timesteps
+        else:
+            self.global_step += 1
         
+        # Update total timesteps
+        self.total_timesteps = self.global_step
+            
         # Check each environment for completed episodes
         if self.locals.get("dones") is not None:
             dones = self.locals["dones"]
             infos = self.locals["infos"]
             
+            # Track episode completions
+            episodes_this_step = 0
+            
             # Process info for each environment that finished an episode
             for idx, done in enumerate(dones):
                 if done:
+                    # Increment episode counter
+                    self.episode_count += 1
+                    episodes_this_step += 1
+                    
                     # Extract metrics for completed episode
                     info = infos[idx]
                     
@@ -77,12 +106,22 @@ class TensorboardCallback(BaseCallback):
                     pokemon_caught = info.get("pokemon_caught", [0])[0]
                     total_ball_upgrades = info.get("total_ball_upgrades", [0])[0]
                     
-                    # Log individual episode values
-                    self.logger.record("metrics/episode_length", episode_length)
-                    self.logger.record("metrics/score", score)
-                    self.logger.record("metrics/episode_return", episode_return)
-                    self.logger.record("metrics/pokemon_caught", pokemon_caught)
-                    self.logger.record("metrics/ball_upgrades", total_ball_upgrades)
+                    # Track steps per episode for conversion
+                    self.steps_per_episode.append(episode_length)
+                    
+                    # Log conversion metrics with clearer names
+                    self.logger.record("episode_tracking/total_episodes_so_far", self.episode_count)
+                    self.logger.record("episode_tracking/episodes_completed_this_step", episodes_this_step)
+                    self.logger.record("episode_tracking/timesteps_in_current_episode", episode_length)
+                    if len(self.steps_per_episode) > 0:
+                        self.logger.record("episode_tracking/avg_timesteps_per_episode", np.mean(self.steps_per_episode[-30:]))
+                    
+                    # Log individual episode values with clearer names
+                    self.logger.record("episode_metrics/length_per_episode", episode_length)
+                    self.logger.record("episode_metrics/score_per_episode", score)
+                    self.logger.record("episode_metrics/reward_per_episode", episode_return)
+                    self.logger.record("episode_metrics/pokemon_caught_per_episode", pokemon_caught)
+                    self.logger.record("episode_metrics/ball_upgrades_per_episode", total_ball_upgrades)
                     
                     # Add to buffers for rolling averages
                     self.episode_length_buffer.append(episode_length)
@@ -107,27 +146,25 @@ class TensorboardCallback(BaseCallback):
                         avg_pokemon_caught = np.mean(self.pokemon_caught_buffer)
                         avg_ball_upgrades = np.mean(self.ball_upgrades_buffer)
                         
-                        self.logger.record("metrics/avg_episode_length", avg_episode_length)
-                        self.logger.record("metrics/avg_score", avg_score)
-                        self.logger.record("metrics/avg_episode_return", avg_rewards)
-                        self.logger.record("metrics/avg_pokemon_caught", avg_pokemon_caught)
-                        self.logger.record("metrics/avg_ball_upgrades", avg_ball_upgrades)
+                        # Log rolling averages with clearer names
+                        self.logger.record("rolling_averages/avg_episode_length", avg_episode_length)
+                        self.logger.record("rolling_averages/avg_score_per_episode", avg_score)
+                        self.logger.record("rolling_averages/avg_reward_per_episode", avg_rewards)
+                        self.logger.record("rolling_averages/avg_pokemon_caught_per_episode", avg_pokemon_caught)
+                        self.logger.record("rolling_averages/avg_ball_upgrades_per_episode", avg_ball_upgrades)
                         
-                        # Add histograms to visualize distributions
-                        if self.writer:
-                            self.writer.add_histogram("metrics_dist/episode_length", 
-                                                    np.array(self.episode_length_buffer), 
-                                                    self.global_step)
-                            self.writer.add_histogram("metrics_dist/score", 
-                                                    np.array(self.score_buffer), 
-                                                    self.global_step)
-                            self.writer.add_histogram("metrics_dist/episode_return", 
-                                                    np.array(self.rewards_buffer), 
-                                                    self.global_step)
+                        # Histograms aren't showing up in WandB, so we'll skip them
+                        
+            # Log the overall relationship between steps and episodes
+            if episodes_this_step > 0:
+                steps_per_episode_ratio = self.total_timesteps / max(1, self.episode_count)
+                self.logger.record("episode_tracking/total_environment_timesteps", self.total_timesteps)
+                self.logger.record("episode_tracking/total_episodes_completed", self.episode_count)
+                self.logger.record("episode_tracking/ratio_timesteps_per_episode", steps_per_episode_ratio)
         
         return True
     
     def _on_training_end(self):
         """Clean up when training ends."""
-        if self.writer:
-            self.writer.close()
+        # No need to close writer as we're using the logger's writer
+        pass
