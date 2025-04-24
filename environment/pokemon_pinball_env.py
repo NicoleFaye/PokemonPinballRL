@@ -475,6 +475,7 @@ class PokemonPinballEnv(gym.Env):
             # Get full screen image (RGB)
             screen_img = self.pyboy.screen.ndarray[:,:,:3]
             
+            # Convert to grayscale 
             screen_img = np.mean(screen_img, axis=2, keepdims=False).astype(np.uint8)
             
             # Downsample if needed
