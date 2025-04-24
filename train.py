@@ -9,6 +9,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 from environment import PokemonPinballEnv, Actions, RewardShaping
+from environment.tensorboard_callback import TensorboardCallback
 
 
 import signal # Aggressively exit on ctrl+c
@@ -46,8 +47,12 @@ if __name__ == "__main__":
         'reduce_screen_resolution': True
     }
 
-    sess_id = f"poke_ppo_{env_config['reward_shaping']}"
-    sess_path = Path(sess_id)
+    from datetime import datetime
+    
+    # Create a unique timestamp for this run
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sess_id = f"{env_config['reward_shaping']}_{timestamp}"
+    sess_path = Path("runs/"+sess_id)
     
     print(env_config)
     
@@ -57,7 +62,10 @@ if __name__ == "__main__":
     checkpoint_callback = CheckpointCallback(save_freq=ep_length//2, save_path=sess_path,
                                      name_prefix="poke")
     
-    callbacks = [checkpoint_callback]#, TensorboardCallback(sess_path)]
+    # Add our custom TensorBoard callback
+    tensorboard_callback = TensorboardCallback(log_dir=sess_path, window_size=20)
+    
+    callbacks = [checkpoint_callback, tensorboard_callback]
 
     if use_wandb_logging:
         import wandb
@@ -97,7 +105,8 @@ if __name__ == "__main__":
     
     print(model.policy)
 
-    model.learn(total_timesteps=(ep_length)*num_cpu*10000, callback=CallbackList(callbacks), tb_log_name="poke_ppo")
+    # Use the sess_id as the tensorboard run name instead of hardcoded "poke_ppo"
+    model.learn(total_timesteps=(ep_length)*num_cpu*10000, callback=CallbackList(callbacks), tb_log_name=sess_id)
 
     if use_wandb_logging:
         run.finish()
