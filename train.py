@@ -1,5 +1,6 @@
 import sys
 from os.path import exists
+from os import _exit
 from pathlib import Path
 import suppress_warnings  # Import the warning suppression module first
 from stable_baselines3 import PPO
@@ -8,6 +9,10 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 from environment import PokemonPinballEnv, Actions, RewardShaping
+
+
+import signal # Aggressively exit on ctrl+c
+signal.signal(signal.SIGINT, lambda sig, frame: _exit(0))
 
 def make_env(rank, env_conf, seed=0):
     """
@@ -45,7 +50,7 @@ if __name__ == "__main__":
     
     print(env_config)
     
-    num_cpu = 1 # Also sets the number of episodes per training iteration
+    num_cpu = 6 # Also sets the number of episodes per training iteration
     env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
     
     checkpoint_callback = CheckpointCallback(save_freq=ep_length//2, save_path=sess_path,
