@@ -26,7 +26,7 @@ def make_env(rank, env_conf, seed=0):
 
 if __name__ == "__main__":
 
-    use_wandb_logging = False
+    use_wandb_logging = True 
     ep_length = 2048 * 80
     sess_id = "runs"
     sess_path = Path(sess_id)
