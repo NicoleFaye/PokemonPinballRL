@@ -1,12 +1,13 @@
 import sys
 from os.path import exists
 from pathlib import Path
+import suppress_warnings  # Import the warning suppression module first
 from stable_baselines3 import PPO
 from stable_baselines3.common import env_checker
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
-from environment.pokemon_pinball_env import PokemonPinballEnv
+from environment import PokemonPinballEnv, Actions, RewardShaping
 
 def make_env(rank, env_conf, seed=0):
     """

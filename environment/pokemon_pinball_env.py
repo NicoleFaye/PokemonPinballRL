@@ -8,6 +8,7 @@ import math
 from gymnasium import spaces
 from pyboy import PyBoy
 from pyboy.plugins.game_wrapper_pokemon_pinball import Stage, BallType, SpecialMode, Maps, Pokemon
+from environment.rewards import RewardShaping
 
 # Build a mapping enums and sequential indices
 STAGE_ENUMS = list(Stage)
@@ -472,11 +473,9 @@ class PokemonPinballEnv(gym.Env):
             visual_obs = game_wrapper.game_area()
         else:
             # Get full screen image (RGB)
-            # Using screen_ndarray() instead of screen_image() which is available in newer PyBoy versions
-            screen_img = self.pyboy.screen_ndarray()
+            screen_img = self.pyboy.screen.ndarray[:,:,:3]
             
-            # Convert RGB to grayscale for simplicity (optional)
-            # screen_img = np.mean(screen_img, axis=2, keepdims=False).astype(np.uint8)
+            screen_img = np.mean(screen_img, axis=2, keepdims=False).astype(np.uint8)
             
             # Downsample if needed
             if self.reduce_screen_resolution:
@@ -540,10 +539,11 @@ class PokemonPinballEnv(gym.Env):
             # Use the frame buffer as observation
             visual_obs = getattr(self, buffer_key)
         
-        # Create observation dictionary
+        # Create observation dictionary with properly formatted numpy arrays
         observation = {
-            "game_area": visual_obs,
+            "game_area": np.asarray(visual_obs, dtype=np.uint8),
         }
+        
         # Level 0 - no info
         if self.info_level == 0:
             return observation
@@ -556,24 +556,30 @@ class PokemonPinballEnv(gym.Env):
             self.recent_ball_x_velocity = np.roll(self.recent_ball_x_velocity, shift=-1)
             self.recent_ball_y_velocity = np.roll(self.recent_ball_y_velocity, shift=-1)
             
-            # Add new values
-            self.recent_ball_x[-1] = game_wrapper.ball_x
-            self.recent_ball_y[-1] = game_wrapper.ball_y
-            self.recent_ball_x_velocity[-1] = game_wrapper.ball_x_velocity
-            self.recent_ball_y_velocity[-1] = game_wrapper.ball_y_velocity
+            # Add new values with None checks
+            self.recent_ball_x[-1] = float(game_wrapper.ball_x) if game_wrapper.ball_x is not None else 0.0
+            self.recent_ball_y[-1] = float(game_wrapper.ball_y) if game_wrapper.ball_y is not None else 0.0
+            self.recent_ball_x_velocity[-1] = float(game_wrapper.ball_x_velocity) if game_wrapper.ball_x_velocity is not None else 0.0
+            self.recent_ball_y_velocity[-1] = float(game_wrapper.ball_y_velocity) if game_wrapper.ball_y_velocity is not None else 0.0
             
             observation.update({
-                "ball_x": self.recent_ball_x,
-                "ball_y": self.recent_ball_y,
-                "ball_x_velocity": self.recent_ball_x_velocity,
-                "ball_y_velocity": self.recent_ball_y_velocity,
+                "ball_x": self.recent_ball_x.astype(np.float32),
+                "ball_y": self.recent_ball_y.astype(np.float32),
+                "ball_x_velocity": self.recent_ball_x_velocity.astype(np.float32),
+                "ball_y_velocity": self.recent_ball_y_velocity.astype(np.float32),
             })
         else:
+            # Provide safe defaults for None values
+            ball_x = float(game_wrapper.ball_x) if game_wrapper.ball_x is not None else 0.0
+            ball_y = float(game_wrapper.ball_y) if game_wrapper.ball_y is not None else 0.0
+            ball_x_velocity = float(game_wrapper.ball_x_velocity) if game_wrapper.ball_x_velocity is not None else 0.0
+            ball_y_velocity = float(game_wrapper.ball_y_velocity) if game_wrapper.ball_y_velocity is not None else 0.0
+            
             observation.update({
-                "ball_x": game_wrapper.ball_x,
-                "ball_y": game_wrapper.ball_y,
-                "ball_x_velocity": game_wrapper.ball_x_velocity,
-                "ball_y_velocity": game_wrapper.ball_y_velocity,
+                "ball_x": np.array([ball_x], dtype=np.float32),
+                "ball_y": np.array([ball_y], dtype=np.float32),
+                "ball_x_velocity": np.array([ball_x_velocity], dtype=np.float32),
+                "ball_y_velocity": np.array([ball_y_velocity], dtype=np.float32),
             })
         
         if self.info_level == 1:
@@ -581,20 +587,31 @@ class PokemonPinballEnv(gym.Env):
         
         # Level 2 - More detailed information
         if self.info_level >= 2:
+            # Handle None values for enum lookups by providing default values
+            current_stage_idx = STAGE_TO_INDEX.get(game_wrapper.current_stage, 0)
+            ball_type_idx = BALL_TYPE_TO_INDEX.get(game_wrapper.ball_type, 0)
+            
+            # Handle possible None values for special mode
+            special_mode = 0 if game_wrapper.special_mode is None else int(game_wrapper.special_mode)
+            special_mode_active = 0 if game_wrapper.special_mode_active is None else int(game_wrapper.special_mode_active)
+            
             observation.update({
-                "current_stage": STAGE_TO_INDEX.get(game_wrapper.current_stage),
-                "ball_type": BALL_TYPE_TO_INDEX.get(game_wrapper.ball_type),
-                "special_mode": game_wrapper.special_mode,
-                "special_mode_active": game_wrapper.special_mode_active,
+                "current_stage": np.array([current_stage_idx], dtype=np.int32),
+                "ball_type": np.array([ball_type_idx], dtype=np.int32),
+                "special_mode": np.array([special_mode], dtype=np.int32),
+                "special_mode_active": np.array([special_mode_active], dtype=np.int32),
             })
             
-        if game_wrapper.ball_saver_seconds_left > 0:
-            observation["saver_active"] = True
-        else :
-            observation["saver_active"] = False
-            # Level 3 - Most detailed information
+        # Convert boolean to int array for tensor compatibility
+        saver_active = 1 if (game_wrapper.ball_saver_seconds_left is not None and 
+                            game_wrapper.ball_saver_seconds_left > 0) else 0
+        observation["saver_active"] = np.array([saver_active], dtype=np.int32)
+            
+        # Level 3 - Most detailed information
         if self.info_level >= 3:
-            observation["pikachu_saver_charge"] = game_wrapper.pikachu_saver_charge
+            # Handle possible None value for pikachu_saver_charge
+            pikachu_charge = 0 if game_wrapper.pikachu_saver_charge is None else int(game_wrapper.pikachu_saver_charge)
+            observation["pikachu_saver_charge"] = np.array([pikachu_charge], dtype=np.int32)
             # TODO add the following
             # current map
             #
@@ -708,124 +725,3 @@ class PokemonPinballEnv(gym.Env):
         return False
 
 
-class RewardShaping:
-    """
-    Collection of reward shaping functions for Pokemon Pinball.
-    These methods operate on the environment instance to ensure proper per-instance state tracking.
-    """
-    
-    @staticmethod
-    def basic(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
-        """Basic reward shaping based on score difference."""
-        return current_fitness - previous_fitness
-    
-    @staticmethod
-    def catch_focused(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
-        """
-        Reward focused on catching Pokemon.
-        
-        Args:
-            current_fitness: Current score
-            previous_fitness: Previous score
-            game_wrapper: Game wrapper instance
-            frames_played: Number of frames played
-            prev_state: Dictionary containing previous state values for tracking
-        """
-        # If no state is passed, create empty state (should never happen since state is managed by environment)
-        if prev_state is None:
-            prev_state = {'prev_caught': 0}
-            
-        score_reward = (current_fitness - previous_fitness) * 0.5
-        
-        # Big reward for catching Pokemon
-        catch_reward = 0
-        if game_wrapper.pokemon_caught_in_session > prev_state.get('prev_caught', 0):
-            catch_reward = 1000
-            # Note: we don't modify prev_state here, as the caller is responsible for tracking it
-            
-        return score_reward + catch_reward
-    
-    @staticmethod
-    def comprehensive(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
-        """
-        Comprehensive reward that promotes long survival and steady progress.
-        
-        Args:
-            current_fitness: Current score
-            previous_fitness: Previous score
-            game_wrapper: Game wrapper instance
-            frames_played: Number of frames played
-            prev_state: Dictionary containing previous state values for tracking
-        """
-        # If no state is passed, create empty state (should never happen since state is managed by environment)
-        if prev_state is None:
-            prev_state = {
-                'prev_caught': 0,
-                'prev_evolutions': 0, 
-                'prev_stages_completed': 0,
-                'prev_ball_upgrades': 0
-            }
-            
-        # Log-scaled score difference
-        score_diff = current_fitness - previous_fitness
-        if score_diff > 0:
-            import numpy as np
-            score_reward = 15 * np.log(1 + score_diff / 100)
-        else:
-            score_reward = 0
-
-        # Ball alive reward and survival bonus
-        ball_alive_reward = 25
-        time_bonus = min(120, frames_played / 400)
-
-        additional_reward = 0
-        reward_sources = {}
-
-        # Catching Pokémon
-        prev_caught = prev_state.get('prev_caught', 0)
-        if game_wrapper.pokemon_caught_in_session > prev_caught:
-            pokemon_reward = 500
-            additional_reward += pokemon_reward
-            reward_sources["pokemon_catch"] = pokemon_reward
-            # Note: we don't modify prev_state here, as the caller is responsible for tracking it
-
-        # Evolution rewards
-        prev_evolutions = prev_state.get('prev_evolutions', 0)
-        if game_wrapper.evolution_success_count > prev_evolutions:
-            evolution_reward = 1000
-            additional_reward += evolution_reward
-            reward_sources["evolution"] = evolution_reward
-            # State is updated by the environment
-
-        # Stage completion
-        total_stages_completed = (
-            game_wrapper.diglett_stages_completed +
-            game_wrapper.gengar_stages_completed +
-            game_wrapper.meowth_stages_completed +
-            game_wrapper.seel_stages_completed +
-            game_wrapper.mewtwo_stages_completed
-        )
-        prev_stages_completed = prev_state.get('prev_stages_completed', 0)
-        if total_stages_completed > prev_stages_completed:
-            stage_reward = 1500
-            additional_reward += stage_reward
-            reward_sources["stage_completion"] = stage_reward
-            # State is updated by the environment
-
-        # Ball upgrades
-        ball_upgrades = (
-            game_wrapper.great_ball_upgrades +
-            game_wrapper.ultra_ball_upgrades +
-            game_wrapper.master_ball_upgrades
-        )
-        prev_ball_upgrades = prev_state.get('prev_ball_upgrades', 0)
-        if ball_upgrades > prev_ball_upgrades:
-            upgrade_reward = 200
-            additional_reward += upgrade_reward
-            reward_sources["ball_upgrade"] = upgrade_reward
-            # State is updated by the environment
-
-        # Combine all rewards
-        total_reward = score_reward + additional_reward + ball_alive_reward + time_bonus
-
-        return total_reward
