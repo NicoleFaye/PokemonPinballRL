@@ -89,6 +89,6 @@ PyBoy-RL/
 
 /wandb/
 
-/runs/
-
 /reference/
+
+/poke_*
