@@ -33,8 +33,6 @@ if __name__ == "__main__":
 
     use_wandb_logging = True 
     ep_length = 2048 * 80
-    sess_id = "runs"
-    sess_path = Path(sess_id)
 
     env_config = {
         'headless': False,
@@ -47,6 +45,9 @@ if __name__ == "__main__":
         'frame_stack_extra_observation': False,
         'reduce_screen_resolution': True
     }
+
+    sess_id = f"poke_ppo_{env_config['reward_shaping']}"
+    sess_path = Path(sess_id)
     
     print(env_config)
     
@@ -56,7 +57,7 @@ if __name__ == "__main__":
     checkpoint_callback = CheckpointCallback(save_freq=ep_length//2, save_path=sess_path,
                                      name_prefix="poke")
     
-    callbacks = []#[checkpoint_callback, TensorboardCallback(sess_path)]
+    callbacks = [checkpoint_callback]#, TensorboardCallback(sess_path)]
 
     if use_wandb_logging:
         import wandb
@@ -65,7 +66,7 @@ if __name__ == "__main__":
         run = wandb.init(
             project="pokemon-train",
             id=sess_id,
-            name="v2-a",
+            name=sess_id,
             config=env_config,
             sync_tensorboard=True,  
             monitor_gym=True,  
