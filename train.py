@@ -63,7 +63,7 @@ if __name__ == "__main__":
                                      name_prefix="poke")
     
     # Add our custom TensorBoard callback
-    tensorboard_callback = TensorboardCallback(log_dir=sess_path, window_size=20)
+    tensorboard_callback = TensorboardCallback(log_dir=sess_path, window_size=100)
     
     callbacks = [checkpoint_callback, tensorboard_callback]
 
@@ -99,16 +99,22 @@ if __name__ == "__main__":
 1. **episode_metrics/**: Raw values for each completed episode
 2. **rolling_averages/**: Smoothed metrics over multiple episodes (window size = 20)
 3. **episode_tracking/**: Relationship between timesteps and episodes
+4. **environment/**: Continuous environment tracking updated every step
 
 ### Key Metrics:
+- **environment/total_environment_timesteps**: Most accurate timestep counter (updates EVERY step)
 - **episode_tracking/total_episodes_completed**: How many full episodes have been played
 - **episode_tracking/ratio_timesteps_per_episode**: Average timesteps needed to complete an episode
-- **episode_tracking/total_environment_timesteps**: Total action steps taken across all environments
 
 ### Understanding Steps vs Episodes:
 - WandB's x-axis "Step" = Environment timesteps (individual actions)
 - One complete game/episode typically contains many timesteps
 - Example: At step 50,000 you might have completed ~165 episodes if each takes ~300 timesteps
+
+### Timestep Counters:
+- WandB's built-in "Steps" counter should match our **environment/total_environment_timesteps**
+- **episode_tracking/** metrics only update when episodes complete
+- The vectorized environment runs multiple games in parallel
 """
         
         # Configure WandB callback with minimal options

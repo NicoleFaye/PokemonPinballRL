@@ -79,7 +79,7 @@ class TensorboardCallback(BaseCallback):
         
         # Update total timesteps
         self.total_timesteps = self.global_step
-            
+
         # Check each environment for completed episodes
         if self.locals.get("dones") is not None:
             dones = self.locals["dones"]
@@ -153,12 +153,10 @@ class TensorboardCallback(BaseCallback):
                         self.logger.record("rolling_averages/avg_pokemon_caught_per_episode", avg_pokemon_caught)
                         self.logger.record("rolling_averages/avg_ball_upgrades_per_episode", avg_ball_upgrades)
                         
-                        # Histograms aren't showing up in WandB, so we'll skip them
                         
             # Log the overall relationship between steps and episodes
             if episodes_this_step > 0:
                 steps_per_episode_ratio = self.total_timesteps / max(1, self.episode_count)
-                self.logger.record("episode_tracking/total_environment_timesteps", self.total_timesteps)
                 self.logger.record("episode_tracking/total_episodes_completed", self.episode_count)
                 self.logger.record("episode_tracking/ratio_timesteps_per_episode", steps_per_episode_ratio)
         
