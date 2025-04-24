@@ -472,7 +472,8 @@ class PokemonPinballEnv(gym.Env):
             visual_obs = game_wrapper.game_area()
         else:
             # Get full screen image (RGB)
-            screen_img = np.array(self.pyboy.screen_image())
+            # Using screen_ndarray() instead of screen_image() which is available in newer PyBoy versions
+            screen_img = self.pyboy.screen_ndarray()
             
             # Convert RGB to grayscale for simplicity (optional)
             # screen_img = np.mean(screen_img, axis=2, keepdims=False).astype(np.uint8)
