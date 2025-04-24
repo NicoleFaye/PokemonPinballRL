@@ -556,11 +556,10 @@ class PokemonPinballEnv(gym.Env):
             self.recent_ball_x_velocity = np.roll(self.recent_ball_x_velocity, shift=-1)
             self.recent_ball_y_velocity = np.roll(self.recent_ball_y_velocity, shift=-1)
             
-            # Add new values with None checks
-            self.recent_ball_x[-1] = float(game_wrapper.ball_x) if game_wrapper.ball_x is not None else 0.0
-            self.recent_ball_y[-1] = float(game_wrapper.ball_y) if game_wrapper.ball_y is not None else 0.0
-            self.recent_ball_x_velocity[-1] = float(game_wrapper.ball_x_velocity) if game_wrapper.ball_x_velocity is not None else 0.0
-            self.recent_ball_y_velocity[-1] = float(game_wrapper.ball_y_velocity) if game_wrapper.ball_y_velocity is not None else 0.0
+            self.recent_ball_x[-1] = float(game_wrapper.ball_x) 
+            self.recent_ball_y[-1] = float(game_wrapper.ball_y) 
+            self.recent_ball_x_velocity[-1] = float(game_wrapper.ball_x_velocity) 
+            self.recent_ball_y_velocity[-1] = float(game_wrapper.ball_y_velocity) 
             
             observation.update({
                 "ball_x": self.recent_ball_x.astype(np.float32),
@@ -569,11 +568,10 @@ class PokemonPinballEnv(gym.Env):
                 "ball_y_velocity": self.recent_ball_y_velocity.astype(np.float32),
             })
         else:
-            # Provide safe defaults for None values
-            ball_x = float(game_wrapper.ball_x) if game_wrapper.ball_x is not None else 0.0
-            ball_y = float(game_wrapper.ball_y) if game_wrapper.ball_y is not None else 0.0
-            ball_x_velocity = float(game_wrapper.ball_x_velocity) if game_wrapper.ball_x_velocity is not None else 0.0
-            ball_y_velocity = float(game_wrapper.ball_y_velocity) if game_wrapper.ball_y_velocity is not None else 0.0
+            ball_x = float(game_wrapper.ball_x) 
+            ball_y = float(game_wrapper.ball_y) 
+            ball_x_velocity = float(game_wrapper.ball_x_velocity) 
+            ball_y_velocity = float(game_wrapper.ball_y_velocity) 
             
             observation.update({
                 "ball_x": np.array([ball_x], dtype=np.float32),
@@ -592,8 +590,8 @@ class PokemonPinballEnv(gym.Env):
             ball_type_idx = BALL_TYPE_TO_INDEX.get(game_wrapper.ball_type, 0)
             
             # Handle possible None values for special mode
-            special_mode = 0 if game_wrapper.special_mode is None else int(game_wrapper.special_mode)
-            special_mode_active = 0 if game_wrapper.special_mode_active is None else int(game_wrapper.special_mode_active)
+            special_mode = int(game_wrapper.special_mode)
+            special_mode_active = int(game_wrapper.special_mode_active)
             
             observation.update({
                 "current_stage": np.array([current_stage_idx], dtype=np.int32),
@@ -603,14 +601,13 @@ class PokemonPinballEnv(gym.Env):
             })
             
         # Convert boolean to int array for tensor compatibility
-        saver_active = 1 if (game_wrapper.ball_saver_seconds_left is not None and 
-                            game_wrapper.ball_saver_seconds_left > 0) else 0
+        saver_active = 1 if (game_wrapper.ball_saver_seconds_left > 0) else 0
         observation["saver_active"] = np.array([saver_active], dtype=np.int32)
             
         # Level 3 - Most detailed information
         if self.info_level >= 3:
             # Handle possible None value for pikachu_saver_charge
-            pikachu_charge = 0 if game_wrapper.pikachu_saver_charge is None else int(game_wrapper.pikachu_saver_charge)
+            pikachu_charge = int(game_wrapper.pikachu_saver_charge)
             observation["pikachu_saver_charge"] = np.array([pikachu_charge], dtype=np.int32)
             # TODO add the following
             # current map
