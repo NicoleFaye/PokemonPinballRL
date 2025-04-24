@@ -213,10 +213,10 @@ class PokemonPinballEnv(gym.Env):
                 obs_shape=(1,self.frame_stack)
 
             observations_dict.update({
-                'ball_x': spaces.Box(low=-128, high=128, shape=obs_shape, dtype=np.float32),
-                'ball_y': spaces.Box(low=-128, high=128, shape=obs_shape,dtype=np.float32),
-                'ball_x_velocity': spaces.Box(low=-128, high=128, shape=obs_shape, dtype=np.float32),
-                'ball_y_velocity': spaces.Box(low=-128, high=128, shape=obs_shape, dtype=np.float32),
+                'ball_x': spaces.Box(low=-128, high=128, shape=obs_shape if self.frame_stack_extra_observation else (1,), dtype=np.float32),
+                'ball_y': spaces.Box(low=-128, high=128, shape=obs_shape if self.frame_stack_extra_observation else (1,), dtype=np.float32),
+                'ball_x_velocity': spaces.Box(low=-128, high=128, shape=obs_shape if self.frame_stack_extra_observation else (1,), dtype=np.float32),
+                'ball_y_velocity': spaces.Box(low=-128, high=128, shape=obs_shape if self.frame_stack_extra_observation else (1,), dtype=np.float32),
             })
         
         if info_level >= 2:
@@ -530,10 +530,10 @@ class PokemonPinballEnv(gym.Env):
             self.recent_ball_y_velocity[-1] = float(game_wrapper.ball_y_velocity) 
             
             observation.update({
-                "ball_x": self.recent_ball_x.astype(np.float32),
-                "ball_y": self.recent_ball_y.astype(np.float32),
-                "ball_x_velocity": self.recent_ball_x_velocity.astype(np.float32),
-                "ball_y_velocity": self.recent_ball_y_velocity.astype(np.float32),
+                "ball_x": np.expand_dims(self.recent_ball_x, axis=0).astype(np.float32),
+                "ball_y": np.expand_dims(self.recent_ball_y, axis=0).astype(np.float32),
+                "ball_x_velocity": np.expand_dims(self.recent_ball_x_velocity, axis=0).astype(np.float32),
+                "ball_y_velocity": np.expand_dims(self.recent_ball_y_velocity, axis=0).astype(np.float32),
             })
         else:
             ball_x = float(game_wrapper.ball_x) 
