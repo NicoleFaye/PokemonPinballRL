@@ -32,12 +32,12 @@ if __name__ == "__main__":
     sess_path = Path(sess_id)
 
     env_config = {
-        'headless': True,
+        'headless': False,
         'debug': False,
-        'reward_shaping': 'comprehensive',
+        'reward_shaping': 'basic',
         'info_level': 2,
         'frame_stack': 4,
-        'frame_skip': 3,
+        'frame_skip': 2,
         'visual_mode': 'screen',
         'frame_stack_extra_observation': False,
         'reduce_screen_resolution': True
