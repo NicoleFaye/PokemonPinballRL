@@ -165,6 +165,13 @@ class TensorboardCallback(BaseCallback):
                         self.logger.record(f"rolling_averages/avg_pokemon_caught_per_{self.window_size}_episodes", avg_pokemon_caught)
                         self.logger.record(f"rolling_averages/avg_ball_upgrades_per_{self.window_size}_episodes", avg_ball_upgrades)
                         
+                        # Log rolling totals as well (sums across the window)
+                        self.logger.record(f"rolling_totals/total_episode_length_per_{self.window_size}_episodes", avg_episode_length * self.window_size)
+                        self.logger.record(f"rolling_totals/total_game_score_per_{self.window_size}_episodes", avg_score * self.window_size)
+                        self.logger.record(f"rolling_totals/total_reward_per_{self.window_size}_episodes", avg_rewards * self.window_size)
+                        self.logger.record(f"rolling_totals/total_pokemon_caught_per_{self.window_size}_episodes", avg_pokemon_caught * self.window_size)
+                        self.logger.record(f"rolling_totals/total_ball_upgrades_per_{self.window_size}_episodes", avg_ball_upgrades * self.window_size)
+                        
                         # Also log max score in the same window (frequency matches other metrics)
                         max_score_in_window = np.max(self.score_buffer)
                         self.logger.record(f"rolling_averages/max_game_score_per_{self.window_size}_episodes", max_score_in_window)
