@@ -307,6 +307,14 @@ class PokemonPinballEnv(gym.Env):
             if self._game_wrapper.score > self._high_score:
                 self._high_score = self._game_wrapper.score
                 info['high_score'] = [True]
+                
+            # Ensure all episode metrics are available in the final info dictionary
+            total_ball_upgrades = (
+                self._game_wrapper.great_ball_upgrades +
+                self._game_wrapper.ultra_ball_upgrades +
+                self._game_wrapper.master_ball_upgrades
+            )
+            info['total_ball_upgrades'] = [float(total_ball_upgrades)]
         
         # Add stuck status to info if applicable
         if truncated:
