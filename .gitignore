@@ -88,3 +88,5 @@ PyBoy-RL/
 /node_modules/
 
 /wandb/
+
+/runs/
