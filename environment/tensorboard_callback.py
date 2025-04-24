@@ -49,6 +49,9 @@ class TensorboardCallback(BaseCallback):
         
         # Keep track of step-to-episode conversion
         self.steps_per_episode = []
+        
+        # Track the best episodes for highlighting
+        self.top_episodes = []  # List of (episode_number, score) tuples
 
     def _on_training_start(self):
         """Initialize the model reference and custom panels when training starts."""
@@ -123,6 +126,15 @@ class TensorboardCallback(BaseCallback):
                     self.logger.record("episode_metrics/pokemon_caught_per_episode", pokemon_caught)
                     self.logger.record("episode_metrics/ball_upgrades_per_episode", total_ball_upgrades)
                     
+                    # Track top episodes (without creating individual metrics)
+                    self.top_episodes.append((self.episode_count, score))
+                    self.top_episodes.sort(key=lambda x: x[1], reverse=True)
+                    self.top_episodes = self.top_episodes[:10]
+                    
+                    # Track current high score (single metric)
+                    if len(self.top_episodes) > 0:
+                        self.logger.record("performance/all_time_high_game_score", max(x[1] for x in self.top_episodes))
+                    
                     # Add to buffers for rolling averages
                     self.episode_length_buffer.append(episode_length)
                     self.score_buffer.append(score)
@@ -146,19 +158,37 @@ class TensorboardCallback(BaseCallback):
                         avg_pokemon_caught = np.mean(self.pokemon_caught_buffer)
                         avg_ball_upgrades = np.mean(self.ball_upgrades_buffer)
                         
-                        # Log rolling averages with clearer names
-                        self.logger.record("rolling_averages/avg_episode_length", avg_episode_length)
-                        self.logger.record("rolling_averages/avg_score_per_episode", avg_score)
-                        self.logger.record("rolling_averages/avg_reward_per_episode", avg_rewards)
-                        self.logger.record("rolling_averages/avg_pokemon_caught_per_episode", avg_pokemon_caught)
-                        self.logger.record("rolling_averages/avg_ball_upgrades_per_episode", avg_ball_upgrades)
+                        # Log rolling averages with consistent window size in name
+                        self.logger.record(f"rolling_averages/avg_episode_length_per_{self.window_size}_episodes", avg_episode_length)
+                        self.logger.record(f"rolling_averages/avg_game_score_per_{self.window_size}_episodes", avg_score)
+                        self.logger.record(f"rolling_averages/avg_reward_per_{self.window_size}_episodes", avg_rewards)
+                        self.logger.record(f"rolling_averages/avg_pokemon_caught_per_{self.window_size}_episodes", avg_pokemon_caught)
+                        self.logger.record(f"rolling_averages/avg_ball_upgrades_per_{self.window_size}_episodes", avg_ball_upgrades)
+                        
+                        # Also log max score in the same window (frequency matches other metrics)
+                        max_score_in_window = np.max(self.score_buffer)
+                        self.logger.record(f"rolling_averages/max_game_score_per_{self.window_size}_episodes", max_score_in_window)
+                        
+                        # Calculate percentiles if we have enough data
+                        if len(self.score_buffer) >= 10:
+                            score_p10 = np.percentile(self.score_buffer, 10)  # 10th percentile (weakest episodes)
+                            score_p50 = np.percentile(self.score_buffer, 50)  # Median
+                            score_p90 = np.percentile(self.score_buffer, 90)  # 90th percentile (best episodes)
+                            
+                            # Record percentiles under performance with clear names
+                            self.logger.record("performance/game_score_bottom_10pct", score_p10)
+                            self.logger.record("performance/game_score_median", score_p50)
+                            self.logger.record("performance/game_score_top_10pct", score_p90)
                         
                         
             # Log the overall relationship between steps and episodes
             if episodes_this_step > 0:
                 steps_per_episode_ratio = self.total_timesteps / max(1, self.episode_count)
                 self.logger.record("episode_tracking/total_episodes_completed", self.episode_count)
-                self.logger.record("episode_tracking/ratio_timesteps_per_episode", steps_per_episode_ratio)
+                self.logger.record("episode_tracking/avg_env_timesteps_per_episode", steps_per_episode_ratio)
+                
+                # No longer need interval tracking since we're using the more reliable
+                # rolling window buffers that update on every episode
         
         return True
     

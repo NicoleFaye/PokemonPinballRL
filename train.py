@@ -90,31 +90,46 @@ if __name__ == "__main__":
         )
         
         # Create notes explaining the metrics and x-axis
-        run.notes = """
+        run.notes = f"""
 ## Pokemon Pinball RL Training Metrics Guide
 
 **X-axis in graphs**: "Step" in WandB refers to environment timesteps (individual actions), not episodes.
 
-### Metric Groups:
-1. **episode_metrics/**: Raw values for each completed episode
-2. **rolling_averages/**: Smoothed metrics over multiple episodes (window size = 20)
-3. **episode_tracking/**: Relationship between timesteps and episodes
-4. **environment/**: Continuous environment tracking updated every step
+### Game Performance Metrics:
+- **performance/all_time_high_game_score**: Highest game score achieved so far
+- **performance/game_score_median**: Median game score (50th percentile)
+- **performance/game_score_bottom_10pct**: Low-end game scores (10th percentile)
+- **performance/game_score_top_10pct**: High-end game scores (90th percentile)
 
-### Key Metrics:
-- **environment/total_environment_timesteps**: Most accurate timestep counter (updates EVERY step)
-- **episode_tracking/total_episodes_completed**: How many full episodes have been played
-- **episode_tracking/ratio_timesteps_per_episode**: Average timesteps needed to complete an episode
+### Rolling Averages (Window size = {tensorboard_callback.window_size}):
+- **rolling_averages/avg_game_score_per_{tensorboard_callback.window_size}_episodes**: Rolling average of game scores
+- **rolling_averages/max_game_score_per_{tensorboard_callback.window_size}_episodes**: Maximum score in each window
+- **rolling_averages/avg_reward_per_{tensorboard_callback.window_size}_episodes**: Rolling average of RL rewards
+- **rolling_averages/avg_episode_length_per_{tensorboard_callback.window_size}_episodes**: Rolling average of episode lengths
+- **rolling_averages/avg_pokemon_caught_per_{tensorboard_callback.window_size}_episodes**: Rolling average of Pokemon caught
+- **rolling_averages/avg_ball_upgrades_per_{tensorboard_callback.window_size}_episodes**: Rolling average of ball upgrades
 
-### Understanding Steps vs Episodes:
-- WandB's x-axis "Step" = Environment timesteps (individual actions)
-- One complete game/episode typically contains many timesteps
-- Example: At step 50,000 you might have completed ~165 episodes if each takes ~300 timesteps
+### Raw Episode Data:
+- **episode_metrics/score_per_episode**: Raw game scores (note: shows sampled points)
+- **episode_metrics/reward_per_episode**: RL reward values received
+- **episode_metrics/length_per_episode**: Episode lengths in environment timesteps
+- **episode_metrics/pokemon_caught_per_episode**: Number of Pokemon caught
+- **episode_metrics/ball_upgrades_per_episode**: Number of ball upgrades
 
-### Timestep Counters:
-- WandB's built-in "Steps" counter should match our **environment/total_environment_timesteps**
-- **episode_tracking/** metrics only update when episodes complete
-- The vectorized environment runs multiple games in parallel
+### Episode/Timestep Tracking:
+- **episode_tracking/total_episodes_completed**: Total game episodes completed
+- **episode_tracking/avg_env_timesteps_per_episode**: Average env timesteps per episode
+
+### Understanding the Data:
+- All metrics use a rolling window of {tensorboard_callback.window_size} episodes for averaging
+- All episode data is recorded, but WandB samples points when zoomed out
+- The rolling averages give the clearest picture of learning progress
+- **performance/all_time_high_game_score** tracks your best achievement
+
+### Recommended Panels for WandB:
+1. **Learning Progress**: rolling_averages/avg_game_score_per_{tensorboard_callback.window_size}_episodes
+2. **Score Distribution**: performance/game_score_median, performance/game_score_top_10pct
+3. **High Scores**: performance/all_time_high_game_score, rolling_averages/max_game_score_per_{tensorboard_callback.window_size}_episodes
 """
         
         # Configure WandB callback with minimal options
