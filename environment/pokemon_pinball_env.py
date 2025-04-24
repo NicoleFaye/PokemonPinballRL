@@ -143,6 +143,7 @@ class PokemonPinballEnv(gym.Env):
 
         # Set output shape based on visual mode
         if self.visual_mode == "game_area":
+            # Game area in Pokemon Pinball is a 16x20 grid
             self.output_shape = (16, 20, self.frame_stack)
         else:  # screen mode
             if self.reduce_screen_resolution:
@@ -194,24 +195,15 @@ class PokemonPinballEnv(gym.Env):
         
         # Create the appropriate observation space based on visual mode
         if self.visual_mode == "game_area":
-            # Game area is a 2D grid with stacked frames (H, W, frames)
+            # Game area is a 2D grid with stacked frames (16x20xframes)
             observations_dict.update({
-                'game_area': spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
+                'visual_representation': spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
             })
         else:
-            # Screen is RGB, so shape is (H, W, 3*frames) or (H, W, frames) if grayscale
-            if len(self.output_shape) == 3:
-                # Already includes channel dimension
-                observations_dict.update({
-                    'game_area': spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
-                })
-            else:
-                # Add RGB channels (3) for each frame
-                h, w = self.output_shape[:2]
-                screen_shape = (h, w, 3 * self.frame_stack)
-                observations_dict.update({
-                    'game_area': spaces.Box(low=0, high=255, shape=screen_shape, dtype=np.uint8)
-                })
+            # Screen is grayscale (either 144x160xframes or 72x80xframes if downsampled)
+            observations_dict.update({
+                'visual_representation': spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
+            })
         
         # Add spaces based on info level
         if info_level >= 1:
@@ -472,16 +464,15 @@ class PokemonPinballEnv(gym.Env):
             # Use game_area (simplified 16x20 grid)
             visual_obs = game_wrapper.game_area()
         else:
-            # Get full screen image (RGB)
-            screen_img = self.pyboy.screen.ndarray[:,:,:3]
+            # Use PyBoy's screen.ndarray but make a copy as recommended in the docs
+            # "Remember to copy this object if you intend to store it"
+            screen_img = np.array(self.pyboy.screen.ndarray[:,:,:3], copy=True)
             
-            # Convert to grayscale 
+            # Convert to grayscale using simple mean across channels
             screen_img = np.mean(screen_img, axis=2, keepdims=False).astype(np.uint8)
             
             # Downsample if needed
             if self.reduce_screen_resolution:
-                # Downsample by factor of 2
-                h, w = screen_img.shape[:2]
                 screen_img = screen_img[::2, ::2]
             
             visual_obs = screen_img
@@ -490,49 +481,25 @@ class PokemonPinballEnv(gym.Env):
         if self.frame_stack > 1:
             buffer_key = f"{self.visual_mode}_buffer"
             
-            # For the first observation, duplicate the single frame to all frames
+            # For the first observation, initialize the frame buffer
             if not hasattr(self, buffer_key):
-                # Create a buffer with the right dimensions
-                if self.visual_mode == "game_area":
-                    # Add channel dimension for stacking
-                    frame_buffer = np.repeat(visual_obs[:, :, np.newaxis], self.frame_stack, axis=2)
-                else:
-                    # For RGB screen, it already has a channel dimension
-                    # Shape is (H, W, 3) -> create (H, W, 3*frame_stack)
-                    if len(visual_obs.shape) == 3:  # RGB image
-                        h, w, c = visual_obs.shape
-                        frame_buffer = np.zeros((h, w, self.frame_stack, c), dtype=np.uint8)
-                        for i in range(self.frame_stack):
-                            frame_buffer[:, :, i, :] = visual_obs
-                        # Reshape to (H, W, frame_stack*C)
-                        frame_buffer = frame_buffer.reshape(h, w, self.frame_stack * c)
-                    else:
-                        # Grayscale
-                        frame_buffer = np.repeat(visual_obs[:, :, np.newaxis], self.frame_stack, axis=2)
+                # Both game_area and screen are now 2D arrays, stack as channels
+                frame_buffer = np.zeros((*visual_obs.shape, self.frame_stack), dtype=np.uint8)
+                
+                # Fill all frame slots with the initial observation
+                for i in range(self.frame_stack):
+                    frame_buffer[..., i] = visual_obs
                 
                 setattr(self, buffer_key, frame_buffer)
             else:
                 # Get the existing buffer
                 frame_buffer = getattr(self, buffer_key)
                 
-                # Update buffer based on format
-                if self.visual_mode == "game_area" or len(visual_obs.shape) == 2:
-                    # For game_area or grayscale, simple rollover
-                    frame_buffer = np.roll(frame_buffer, shift=-1, axis=2)
-                    frame_buffer[:, :, -1] = visual_obs
-                else:
-                    # For RGB, we need to handle multiple channels
-                    h, w, c = visual_obs.shape
-                    # Get shape of buffer
-                    buffer_h, buffer_w, buffer_c = frame_buffer.shape
-                    # Reshape to (H, W, frame_stack, C)
-                    temp_buffer = frame_buffer.reshape(h, w, self.frame_stack, c)
-                    # Roll along frame_stack dimension
-                    temp_buffer = np.roll(temp_buffer, shift=-1, axis=2)
-                    # Update newest frame
-                    temp_buffer[:, :, -1, :] = visual_obs
-                    # Reshape back
-                    frame_buffer = temp_buffer.reshape(h, w, self.frame_stack * c)
+                # Shift frames (roll the time dimension)
+                frame_buffer = np.roll(frame_buffer, shift=-1, axis=-1)
+                
+                # Update the newest frame position
+                frame_buffer[..., -1] = visual_obs
                 
                 # Save back to object
                 setattr(self, buffer_key, frame_buffer)
@@ -542,7 +509,7 @@ class PokemonPinballEnv(gym.Env):
         
         # Create observation dictionary with properly formatted numpy arrays
         observation = {
-            "game_area": np.asarray(visual_obs, dtype=np.uint8),
+            "visual_representation": np.asarray(visual_obs, dtype=np.uint8),
         }
         
         # Level 0 - no info
