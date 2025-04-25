@@ -63,17 +63,6 @@ class TensorboardCallback(BaseCallback):
         """Initialize the model reference and custom panels when training starts."""
         # Get a reference to the model
         self.model = self.locals.get('self')
-        
-        # Add custom panel to WandB if available
-        try:
-            import wandb
-            if wandb.run is not None:
-                # Add a custom panel to make the step vs episode relationship clear
-                wandb.run.config.update({
-                    "IMPORTANT_NOTE": "In WandB graphs, 'Step' on x-axis means environment timesteps, not episodes"
-                })
-        except (ImportError, AttributeError):
-            pass
 
     def _on_step(self) -> bool:
         """
