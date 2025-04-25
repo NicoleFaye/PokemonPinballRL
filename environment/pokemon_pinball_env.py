@@ -79,27 +79,6 @@ class PokemonPinballEnv(gym.Env):
         import os
         pid = os.getpid()
         
-        # Only try to detect driver environment in the first instance per process
-        # We'll limit this to just the main thread in the main process
-        if self.instance_id == 1:
-            import traceback
-            
-            # Look at the call stack - if this is being created by PufferLib vector
-            # initialization code for driver/observation space purposes, make it headless
-            is_driver = False
-            
-            # Check the call stack for driver environment patterns
-            stack = traceback.extract_stack()
-            for frame in stack:
-                if any(x in frame.filename for x in ['pufferlib/vector.py', 'pufferlib/environment.py']):
-                    if any(x in frame.name for x in ['make', '_create_driver', '_reset_env']):
-                        is_driver = True
-                        break
-            
-            if is_driver:
-                print(f"Detected driver environment in PID {pid} - forcing headless mode")
-                config['headless'] = True
-                
         print(f"Creating PokemonPinballEnv instance {self.instance_id} in process {pid}")
         window_type = "null" if config['headless'] else "SDL2"
         self.pyboy = PyBoy(rom_path, window=window_type, sound_emulated=False)
