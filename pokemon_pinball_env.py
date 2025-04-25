@@ -8,7 +8,7 @@ import math
 from gymnasium import spaces
 from pyboy import PyBoy
 from pyboy.plugins.game_wrapper_pokemon_pinball import Stage, BallType, SpecialMode, Maps, Pokemon
-from environment.rewards import RewardShaping
+from rewards import RewardShaping
 
 # Build a mapping enums and sequential indices
 STAGE_ENUMS = list(Stage)

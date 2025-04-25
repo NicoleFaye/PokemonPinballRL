@@ -9,8 +9,8 @@ from stable_baselines3.common import env_checker
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
-from environment import PokemonPinballEnv, Actions, RewardShaping
-from environment.tensorboard_callback import TensorboardCallback
+from pokemon_pinball_env import PokemonPinballEnv
+from tensorboard_callback import TensorboardCallback
 
 
 import signal # Aggressively exit on ctrl+c
