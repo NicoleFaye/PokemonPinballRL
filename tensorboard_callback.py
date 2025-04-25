@@ -10,15 +10,15 @@ class TensorboardCallback(BaseCallback):
     """
     Custom callback for logging environment metrics to TensorBoard.
     
-    This callback tracks:
-    - Episode length per episode
-    - Score per episode
-    - Rewards per episode
-    - Number of Pokemon caught per episode
-    - Number of ball upgrades per episode
+    This callback tracks episode-based metrics including:
+    - Episode length
+    - Game score
+    - Episode rewards
+    - Number of Pokemon caught
+    - Number of ball upgrades
     
-    It calculates both individual episode values and rolling averages for cleaner visualization.
-    Compatible with vectorized environments.
+    It calculates both individual episode values and rolling averages, and ensures
+    that episode-based metrics use episode count as the x-axis in visualizations.
     """
 
     def __init__(self, log_dir: str, verbose: int = 0, window_size: int = 100, log_interval: int = 5000):
@@ -51,16 +51,16 @@ class TensorboardCallback(BaseCallback):
         
         # Track cumulative metrics
         self.total_pokemon_caught = 0
-        self.total_score = 0  # Added back for avg_score_per_episode
+        self.total_score = 0
         
         # Keep track of step-to-episode conversion
         self.steps_per_episode = []
         
-        # Track the best episodes for highlighting
+        # Track the best episodes
         self.top_episodes = []  # List of (episode_number, score) tuples
 
     def _on_training_start(self):
-        """Initialize the model reference and custom panels when training starts."""
+        """Initialize the model reference when training starts."""
         # Get a reference to the model
         self.model = self.locals.get('self')
 
@@ -77,6 +77,9 @@ class TensorboardCallback(BaseCallback):
         
         # Update total timesteps
         self.total_timesteps = self.global_step
+        
+        # Record global step metric (timestep-based)
+        self.logger.record("training/global_step", self.global_step)
 
         # Check each environment for completed episodes
         if self.locals.get("dones") is not None:
@@ -111,9 +114,9 @@ class TensorboardCallback(BaseCallback):
                     # Track steps per episode for conversion
                     self.steps_per_episode.append(episode_length)
                     
-                    # Log basic tracking metrics
+                    # Log global tracking metrics (timestep-based)
                     self.logger.record("episode_tracking/total_episodes_completed", self.episode_count)
-                    self.logger.record("episode_tracking/avg_env_timesteps_per_episode", 
+                    self.logger.record("episode_tracking/avg_timesteps_per_episode", 
                                      self.total_timesteps / max(1, self.episode_count))
                     self.logger.record("episode_tracking/total_pokemon_caught", self.total_pokemon_caught)
                     self.logger.record("episode_tracking/avg_pokemon_per_episode", 
@@ -121,14 +124,17 @@ class TensorboardCallback(BaseCallback):
                     self.logger.record("episode_tracking/avg_score_per_episode", 
                                      self.total_score / max(1, self.episode_count))
                     
-                    # Only log individual episode data periodically to reduce noise
-                    if self.episode_count % 10 == 0:
-                        # Log with episode number as x-axis value
-                        self.logger.record("episodes/score", score, self.episode_count)
-                        self.logger.record("episodes/length", episode_length, self.episode_count)
-                        self.logger.record("episodes/reward", episode_return, self.episode_count)
-                        self.logger.record("episodes/pokemon_caught", pokemon_caught, self.episode_count)
-                        self.logger.record("episodes/ball_upgrades", total_ball_upgrades, self.episode_count)
+                    self.logger.record("episode_metrics/score_per_episode", score, self.episode_count)
+                    self.logger.record("episode_metrics/length_per_episode", episode_length, self.episode_count)
+                    self.logger.record("episode_metrics/reward_per_episode", episode_return, self.episode_count)
+                    self.logger.record("episode_metrics/pokemon_caught_per_episode", pokemon_caught, self.episode_count)
+                    self.logger.record("episode_metrics/ball_upgrades_per_episode", total_ball_upgrades, self.episode_count)
+                    
+                    # Additionally, record the current episode data without x-axis for SB3's default logging
+                    # These will use global step as x-axis in TensorBoard
+                    self.logger.record("timestep_metrics/score", score)
+                    self.logger.record("timestep_metrics/episode_length", episode_length)
+                    self.logger.record("timestep_metrics/episode_reward", episode_return)
                     
                     # Track top episodes
                     self.top_episodes.append((self.episode_count, score))
@@ -154,20 +160,29 @@ class TensorboardCallback(BaseCallback):
                         self.pokemon_caught_buffer.pop(0)
                         self.ball_upgrades_buffer.pop(0)
         
-        # Log rolling averages at fixed intervals only
+        # Log rolling averages at fixed intervals
         if self.global_step % self.log_interval == 0 and len(self.score_buffer) >= 2:
+            # Calculate rolling averages
             avg_episode_length = np.mean(self.episode_length_buffer)
             avg_score = np.mean(self.score_buffer)
             avg_rewards = np.mean(self.rewards_buffer)
             avg_pokemon_caught = np.mean(self.pokemon_caught_buffer)
             avg_ball_upgrades = np.mean(self.ball_upgrades_buffer)
             
+            # Log rolling averages with episode count as x-axis
+            curr_episode = self.episode_count
+            
             # Log rolling averages with consistent window size in name
-            self.logger.record(f"rolling_averages/avg_episode_length_per_{self.window_size}_episodes", avg_episode_length)
-            self.logger.record(f"rolling_averages/avg_game_score_per_{self.window_size}_episodes", avg_score)
-            self.logger.record(f"rolling_averages/avg_reward_per_{self.window_size}_episodes", avg_rewards)
-            self.logger.record(f"rolling_averages/avg_pokemon_caught_per_{self.window_size}_episodes", avg_pokemon_caught)
-            self.logger.record(f"rolling_averages/avg_ball_upgrades_per_{self.window_size}_episodes", avg_ball_upgrades)
+            self.logger.record(f"rolling_averages/avg_episode_length_per_{self.window_size}_episodes", 
+                             avg_episode_length, curr_episode)
+            self.logger.record(f"rolling_averages/avg_game_score_per_{self.window_size}_episodes", 
+                             avg_score, curr_episode)
+            self.logger.record(f"rolling_averages/avg_reward_per_{self.window_size}_episodes", 
+                             avg_rewards, curr_episode)
+            self.logger.record(f"rolling_averages/avg_pokemon_caught_per_{self.window_size}_episodes", 
+                             avg_pokemon_caught, curr_episode)
+            self.logger.record(f"rolling_averages/avg_ball_upgrades_per_{self.window_size}_episodes", 
+                             avg_ball_upgrades, curr_episode)
             
             # Calculate percentiles if we have enough data
             if len(self.score_buffer) >= 10:
@@ -175,18 +190,23 @@ class TensorboardCallback(BaseCallback):
                 score_p50 = np.percentile(self.score_buffer, 50)  # Median
                 score_p90 = np.percentile(self.score_buffer, 90)  # 90th percentile (best episodes)
                 
-                # Record percentiles under performance with clear names
-                self.logger.record("performance/game_score_bottom_10pct", score_p10)
-                self.logger.record("performance/game_score_median", score_p50)
-                self.logger.record("performance/game_score_top_10pct", score_p90)
+                # Record percentiles with episode count as x-axis
+                self.logger.record("performance/game_score_bottom_10pct", score_p10, curr_episode)
+                self.logger.record("performance/game_score_median", score_p50, curr_episode)
+                self.logger.record("performance/game_score_top_10pct", score_p90, curr_episode)
                 
-                # Log max score in the same window
+                # Log max score in the window
                 max_score_in_window = np.max(self.score_buffer)
-                self.logger.record(f"rolling_averages/max_game_score_per_{self.window_size}_episodes", max_score_in_window)
+                self.logger.record(f"rolling_averages/max_game_score_per_{self.window_size}_episodes", 
+                                 max_score_in_window, curr_episode)
+                
+                # Also log the same metrics with global step as x-axis for compatibility
+                self.logger.record("timestep_metrics/rolling_avg_score", avg_score)
+                self.logger.record("timestep_metrics/rolling_avg_reward", avg_rewards)
         
         return True
     
     def _on_training_end(self):
         """Clean up when training ends."""
-        # No need to close writer as we're using the logger's writer
+        # No additional cleanup needed when using SB3's logger
         pass
