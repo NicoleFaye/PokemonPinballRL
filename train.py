@@ -102,10 +102,10 @@ if __name__ == "__main__":
         from wandb.integration.sb3 import WandbCallback
         
         # Make sure runs directory exists
-        makedirs("./runs", exist_ok=True)
+        makedirs(sess_path, exist_ok=True)
         
         # Patch TensorBoard at the root level to capture all grouped metrics
-        wandb.tensorboard.patch(root_logdir="./runs")
+        wandb.tensorboard.patch(root_logdir=str(sess_path))
         
         # Initialize WandB
         run = wandb.init(
@@ -116,7 +116,7 @@ if __name__ == "__main__":
             sync_tensorboard=True,
             monitor_gym=True,
             save_code=True,
-            dir="./runs",  # Set the wandb directory to avoid nesting
+            dir=str(sess_path),  # Store wandb data in the session folder
         )
         
         # Create notes explaining the metrics and x-axis
@@ -191,9 +191,9 @@ if __name__ == "__main__":
         model = PPO("MultiInputPolicy", env, verbose=1, n_steps=train_steps_batch, batch_size=512, n_epochs=1, 
               gamma=0.997, ent_coef=0.01, tensorboard_log=None)
               
-        # Configure the logger manually - use main runs directory
+        # Configure the logger to use the session path
         from stable_baselines3.common.logger import configure
-        model.set_logger(configure("./runs", ["stdout", "tensorboard"]))
+        model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
     
     print(model.policy)
 
