@@ -1,4 +1,5 @@
 import sys
+import argparse
 from os.path import exists
 from os import _exit, makedirs
 from pathlib import Path
@@ -31,14 +32,28 @@ def make_env(rank, env_conf, seed=0):
     return _init
 
 if __name__ == "__main__":
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train Pokemon Pinball RL agent')
+    parser.add_argument('--timesteps', type=int, default=10_000_000,
+                        help='Number of timesteps to train for (default: 10,000,000)')
+    parser.add_argument('--window_size', type=int, default=100,
+                        help='Size of window for rolling metrics (default: 100)')
+    parser.add_argument('--reward_mode', type=str, default='basic', choices=['basic', 'catch_focused', 'comprehensive'],
+                        help='Reward shaping mode (default: basic)')
+    parser.add_argument('--headless', action='store_true', help='Run in headless mode')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
+    parser.add_argument('--resume', type=str, help='Path to checkpoint to resume training from (without .zip extension)')
+    args = parser.parse_args()
 
-    use_wandb_logging = True 
-    ep_length = 2048 * 80
+    use_wandb_logging = not args.no_wandb
+
+    time_steps = args.timesteps
 
     env_config = {
-        'headless': False,
-        'debug': False,
-        'reward_shaping': 'basic',
+        'headless': args.headless,
+        'debug': args.debug,
+        'reward_shaping': args.reward_mode,
         'info_level': 2,
         'frame_stack': 4,
         'frame_skip': 2,
@@ -49,21 +64,36 @@ if __name__ == "__main__":
 
     from datetime import datetime
     
-    # Create a unique timestamp for this run
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    sess_id = f"{env_config['reward_shaping']}_{timestamp}"
+    # Create a unique timestamp for this run or extract session ID from resume path
+    if args.resume:
+        # Extract the session ID from the resume path
+        resume_path = Path(args.resume)
+        # If the resume path includes a runs directory, use that session ID
+        if "runs" in str(resume_path):
+            # Get the parent directory which should be the session directory
+            sess_id = resume_path.parent.name
+        else:
+            # If just a checkpoint name was provided, use a new session ID
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            sess_id = f"{env_config['reward_shaping']}_resumed_{timestamp}"
+    else:
+        # New run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        sess_id = f"{env_config['reward_shaping']}_{timestamp}"
+    
     sess_path = Path("runs/"+sess_id)
+    makedirs(sess_path, exist_ok=True)
     
     print(env_config)
     
-    num_cpu = 6 # Also sets the number of episodes per training iteration
+    num_cpu = 6
+    save_freq_divisor = 200
     env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
     
-    checkpoint_callback = CheckpointCallback(save_freq=ep_length//2, save_path=sess_path,
+    checkpoint_callback = CheckpointCallback(save_freq=time_steps//save_freq_divisor, save_path=sess_path,
                                      name_prefix="poke")
     
-    # Add our custom TensorBoard callback
-    tensorboard_callback = TensorboardCallback(log_dir=sess_path, window_size=100)
+    tensorboard_callback = TensorboardCallback(log_dir=sess_path, window_size=args.window_size)
     
     callbacks = [checkpoint_callback, tensorboard_callback]
 
@@ -138,17 +168,19 @@ if __name__ == "__main__":
 
     #env_checker.check_env(env)
 
-    # put a checkpoint here you want to start from    
-    if sys.stdin.isatty():
-        file_name = ""
-    else:
-        file_name = sys.stdin.read().strip() #"runs/poke_26214400_steps"
+    # Define a smaller n_steps for the buffer size to avoid memory issues
+    train_steps_batch = 2048  # Standard PPO default
 
-    train_steps_batch = ep_length // 64
+    # Check for resume checkpoint
+    checkpoint_path = args.resume if args.resume else ""
     
-    if exists(file_name + ".zip"):
-        print("\nloading checkpoint")
-        model = PPO.load(file_name, env=env)
+    # If not specified via args, check stdin (for backwards compatibility)
+    if not checkpoint_path and not sys.stdin.isatty():
+        checkpoint_path = sys.stdin.read().strip()
+    
+    if checkpoint_path and exists(checkpoint_path + ".zip"):
+        print(f"\nResuming from checkpoint: {checkpoint_path}")
+        model = PPO.load(checkpoint_path, env=env)
         model.n_steps = train_steps_batch
         model.n_envs = num_cpu
         model.rollout_buffer.buffer_size = train_steps_batch
@@ -165,8 +197,9 @@ if __name__ == "__main__":
     
     print(model.policy)
 
-    # Don't specify a tb_log_name to avoid the prefix altogether
-    model.learn(total_timesteps=(ep_length)*num_cpu*10000, callback=CallbackList(callbacks))
+    # Use the timesteps parameter for training
+    # The buffer size (n_steps=2048) is already set properly in the model
+    model.learn(total_timesteps=time_steps, callback=CallbackList(callbacks))
 
     if use_wandb_logging:
         run.finish()

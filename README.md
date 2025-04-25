@@ -1,6 +1,6 @@
-# Pokemon Pinball RL with PufferLib
+# Pokemon Pinball RL
 
-This project combines PyBoy, a Game Boy emulator with Python interface, with PufferLib, a reinforcement learning library, to train an agent to play Pokemon Pinball.
+This project uses the Stable Baselines 3 reinforcement learning library to train an agent to play Pokemon Pinball.
 
 ## Overview
 
@@ -8,9 +8,8 @@ Pokemon Pinball RL uses deep reinforcement learning to play Pokemon Pinball. The
 
 1. Uses PyBoy to emulate the Game Boy environment
 2. Implements a Gymnasium-compatible environment for Pokemon Pinball
-3. Leverages PufferLib for efficient agent training with vectorized environments
-4. Uses PufferLib's optimized model architectures and PPO implementation
-5. Supports various reward shaping strategies to guide learning
+3. Uses Stable Baselines 3 for efficient agent training with vectorized environments
+4. Supports various reward shaping strategies to guide learning
 
 ## Installation
 
@@ -36,57 +35,82 @@ pip install -r requirements.txt
 
 ### Training
 
-To train an agent on Pokemon Pinball using PufferLib:
+To train an agent on Pokemon Pinball:
 
 ```bash
-python train_puffer.py --rom path/to/pokemon_pinball.gbc --reward-shaping comprehensive --policy-type cnn
+python train.py [--timesteps TIMESTEPS] [--window_size WINDOW_SIZE] [--reward_mode REWARD_MODE]
 ```
 
 Key parameters:
-- `--rom`: Path to the Pokemon Pinball ROM file
-- `--reward-shaping`: Reward function (`basic`, `catch_focused`, or `comprehensive`)
-- `--policy-type`: Network architecture (`cnn`, `mlp`, or `resnet`)
-- `--recurrent`: Add this flag to use an LSTM-based recurrent policy
-- `--num-envs`: Number of parallel environments (default: 4)
-- `--framestack`: Number of frames to stack (default: 4)
-- `--frame-skip`: Number of frames to skip (default: 4)
+- `--timesteps`: Number of timesteps to train for (default: 10,000,000)
+- `--window_size`: Size of window for rolling metrics (default: 100)
+- `--reward_mode`: Reward shaping mode - basic, catch_focused, or comprehensive (default: basic)
+- `--headless`: Run in headless mode without visualization
+- `--debug`: Enable debug mode
+- `--no_wandb`: Disable WandB logging
+
+To resume training from a checkpoint:
+```bash
+python train.py --resume runs/basic_20250424_145544/poke_1 --timesteps 5000000
+```
+
+Resume parameters:
+- `--resume`: Path to checkpoint file (without .zip extension)
+
+When you provide a checkpoint path in the format `runs/SESSION_ID/checkpoint_name`, the training will automatically continue in the same session directory. Otherwise, it will create a new session directory with "_resumed_" in the name.
+
+You can combine the resume parameter with any other parameters like `--timesteps`, `--window_size`, or `--reward_mode`. The resumed training will use the new parameters provided.
 
 For more options:
 ```bash
-python train_puffer.py --help
+python train.py --help
 ```
 
-### Evaluation
+## Metrics Guide
 
-To evaluate a trained agent:
+When training, the following metrics are tracked:
 
-```bash
-python evaluate_puffer.py --rom path/to/pokemon_pinball.gbc --model checkpoints/model_name/final.pt --render
-```
+**X-axis in graphs**: "Step" in WandB refers to environment timesteps (individual actions), not episodes.
 
-Key parameters:
-- `--rom`: Path to the Pokemon Pinball ROM file
-- `--model`: Path to the trained model file
-- `--render`: Enable visualization
-- `--speed`: Game speed for visualization (default: 1.0)
-- `--episodes`: Number of episodes to evaluate (default: 5)
-- `--record`: Record videos of evaluation episodes
+### Game Performance Metrics:
+- **performance/all_time_high_game_score**: Highest game score achieved so far
+- **performance/game_score_median**: Median game score (50th percentile)
+- **performance/game_score_bottom_10pct**: Low-end game scores (10th percentile)
+- **performance/game_score_top_10pct**: High-end game scores (90th percentile)
 
-For more options:
-```bash
-python evaluate_puffer.py --help
-```
+### Rolling Averages:
+- **rolling_averages/avg_game_score_per_window**: Rolling average of game scores
+- **rolling_averages/max_game_score_per_window**: Maximum score in each window
+- **rolling_averages/avg_reward_per_window**: Rolling average of RL rewards
+- **rolling_averages/avg_episode_length_per_window**: Rolling average of episode lengths
+- **rolling_averages/avg_pokemon_caught_per_window**: Rolling average of Pokemon caught
+- **rolling_averages/avg_ball_upgrades_per_window**: Rolling average of ball upgrades
+
+### Raw Episode Data:
+- **episode_metrics/score_per_episode**: Raw game scores (note: shows sampled points)
+- **episode_metrics/reward_per_episode**: RL reward values received
+- **episode_metrics/length_per_episode**: Episode lengths in environment timesteps
+- **episode_metrics/pokemon_caught_per_episode**: Number of Pokemon caught
+- **episode_metrics/ball_upgrades_per_episode**: Number of ball upgrades
+
+### Episode/Timestep Tracking:
+- **episode_tracking/total_episodes_completed**: Total game episodes completed
+- **episode_tracking/avg_env_timesteps_per_episode**: Average env timesteps per episode
+
+### Understanding the Data:
+- All metrics use a configurable rolling window size for averaging
+- All episode data is recorded, but WandB samples points when zoomed out
+- The rolling averages give the clearest picture of learning progress
+- **performance/all_time_high_game_score** tracks your best achievement
 
 ## Project Structure
 
 - `environment/`: Contains the Gymnasium environment implementation
   - `pokemon_pinball_env.py`: Core environment implementation
-  - `wrappers.py`: Various environment wrappers
-  - `puffer_env.py`: PufferLib-compatible environment
-- `models/`: Neural network models
-  - `puffer_models.py`: PufferLib-compatible policy models
-- `train_puffer.py`: Main training script using PufferLib
-- `evaluate_puffer.py`: Evaluation script for trained agents
+  - `rewards.py`: Various reward shaping strategies
+  - `tensorboard_callback.py`: Custom TensorBoard logging
+- `checkpoints/`: Saved model checkpoints
+- `train.py`: Main training script using Stable Baselines 3
 
 ## Training Strategies
 
@@ -105,5 +129,6 @@ The project implements different reward shaping strategies:
 ## Acknowledgments
 
 - [PyBoy](https://github.com/Baekalfen/PyBoy): Game Boy emulator
-- [PufferLib](https://github.com/pufferlib/pufferlib): Reinforcement learning library
+- [Stable Baselines 3](https://github.com/DLR-RM/stable-baselines3): Reinforcement learning library
 - [Gymnasium](https://gymnasium.farama.org/): Reinforcement learning environment interface
+- [WandB](https://wandb.ai/): Experiment tracking
