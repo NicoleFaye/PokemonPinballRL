@@ -183,7 +183,7 @@ if __name__ == "__main__":
     print(model.policy)
 
     # Use the timesteps parameter for training
-    model.learn(total_timesteps=time_steps, callback=CallbackList(callbacks))
+    model.learn(total_timesteps=time_steps, callback=CallbackList(callbacks),reset_num_timesteps=args.resume)
 
     # Save final model and normalization stats
     final_model_path = f"{sess_path}/poke_final"
