@@ -69,18 +69,6 @@ class TensorboardCallback(BaseCallback):
         Called at each environment step during training.
         Checks if any environment completed an episode and logs metrics accordingly.
         """
-        # Use the model num_timesteps as global step 
-        if hasattr(self.model, 'num_timesteps'):
-            self.global_step = self.model.num_timesteps
-        else:
-            self.global_step += 1
-        
-        # Update total timesteps
-        self.total_timesteps = self.global_step
-        
-        # Record global step metric (timestep-based)
-        self.logger.record("training/global_step", self.global_step)
-
         # Check each environment for completed episodes
         if self.locals.get("dones") is not None:
             dones = self.locals["dones"]
@@ -100,7 +88,7 @@ class TensorboardCallback(BaseCallback):
                     info = infos[idx]
                     
                     # Get metrics from the info dictionary
-                    # Note: In the environment, values are stored as lists (for PufferLib compatibility)
+                    # Note: In the environment, values are stored as lists 
                     episode_length = info.get("episode_length", [0])[0]
                     score = info.get("score", [0])[0]
                     episode_return = info.get("episode_return", [0])[0]
@@ -114,7 +102,6 @@ class TensorboardCallback(BaseCallback):
                     # Track steps per episode for conversion
                     self.steps_per_episode.append(episode_length)
                     
-                    # Log global tracking metrics (timestep-based)
                     self.logger.record("episode_tracking/total_episodes_completed", self.episode_count)
                     self.logger.record("episode_tracking/avg_timesteps_per_episode", 
                                      self.total_timesteps / max(1, self.episode_count))
@@ -161,7 +148,7 @@ class TensorboardCallback(BaseCallback):
                         self.ball_upgrades_buffer.pop(0)
         
         # Log rolling averages at fixed intervals
-        if self.global_step % self.log_interval == 0 and len(self.score_buffer) >= 2:
+        if len(self.score_buffer) >= 2:
             # Calculate rolling averages
             avg_episode_length = np.mean(self.episode_length_buffer)
             avg_score = np.mean(self.score_buffer)
