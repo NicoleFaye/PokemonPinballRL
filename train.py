@@ -6,7 +6,7 @@ from pathlib import Path
 import suppress_warnings  # Import the warning suppression module first
 from stable_baselines3 import PPO
 from stable_baselines3.common import env_checker
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 from stable_baselines3.common.monitor import Monitor
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     parser.add_argument('--headless', action='store_true', help='Run in headless mode')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--no_wandb', action='store_true', help='Disable WandB logging')
-    parser.add_argument('--resume', type=str, help='Path to checkpoint to resume training from (without .zip extension)')
+    parser.add_argument('--resume', type=str, help='Path to checkpoint to resume training from (with .zip extension)')
     args = parser.parse_args()
 
     use_wandb_logging = not args.no_wandb
@@ -62,6 +62,8 @@ if __name__ == "__main__":
         'frame_stack_extra_observation': False,
         'reduce_screen_resolution': True
     }
+
+    gamma = 0.997
 
     from datetime import datetime
     
@@ -90,10 +92,24 @@ if __name__ == "__main__":
     num_cpu = 6
     save_freq_divisor = 200
     env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
+
+    # Add VecNormalize wrapper
+    env = VecNormalize(
+        env,
+        norm_obs=False,  # Set to False since you handle observation normalization
+        norm_reward=True,
+        clip_obs=10.0,
+        clip_reward=10.0,
+        gamma=gamma,
+        epsilon=1e-8
+    )
     
-    checkpoint_callback = CheckpointCallback(save_freq=time_steps//save_freq_divisor, save_path=sess_path,
-                                     name_prefix="poke")
-    
+    # Create the regular checkpoint callback
+    checkpoint_callback = CheckpointCallback(
+        save_freq=time_steps//save_freq_divisor, 
+        save_path=sess_path,
+        name_prefix="poke"
+    )
     
     callbacks = [checkpoint_callback]
 
@@ -119,12 +135,9 @@ if __name__ == "__main__":
             dir=str(sess_path),  # Store wandb data in the session folder
         )
         
-        
         # Configure WandB callback with minimal options
         wandb_callback = WandbCallback(verbose=1)
         callbacks.append(wandb_callback)
-
-    #env_checker.check_env(env)
 
     # Define a smaller n_steps for the buffer size to avoid memory issues
     train_steps_batch = 2048  # Standard PPO default
@@ -136,8 +149,22 @@ if __name__ == "__main__":
     if not checkpoint_path and not sys.stdin.isatty():
         checkpoint_path = sys.stdin.read().strip()
     
-    if checkpoint_path and exists(checkpoint_path + ".zip"):
+    if checkpoint_path and exists(checkpoint_path):
         print(f"\nResuming from checkpoint: {checkpoint_path}")
+        
+        # Check if normalization stats exist alongside the checkpoint
+        norm_path = checkpoint_path.replace(".zip", "") + "_vecnormalize.pkl"
+        if exists(norm_path):
+            print(f"Loading normalization stats from: {norm_path}")
+            env = VecNormalize.load(norm_path, env)
+            # Keep collecting running statistics during training
+            env.training = True
+            # Ensure observation normalization is disabled
+            env.norm_obs = False
+        else:
+            print("No normalization stats found, using default initialization")
+        
+        # Load the model with the normalized environment
         model = PPO.load(checkpoint_path, env=env)
         model.n_steps = train_steps_batch
         model.n_envs = num_cpu
@@ -147,7 +174,7 @@ if __name__ == "__main__":
     else:
         # Set PPO to log directly to the metrics directory, without any prefix
         model = PPO("MultiInputPolicy", env, verbose=1, n_steps=train_steps_batch, batch_size=512, n_epochs=1, 
-              gamma=0.997, ent_coef=0.01, tensorboard_log=None)
+              gamma=gamma, ent_coef=0.01, tensorboard_log=None)
               
         # Configure the logger to use the session path
         from stable_baselines3.common.logger import configure
@@ -156,8 +183,12 @@ if __name__ == "__main__":
     print(model.policy)
 
     # Use the timesteps parameter for training
-    # The buffer size (n_steps=2048) is already set properly in the model
     model.learn(total_timesteps=time_steps, callback=CallbackList(callbacks))
+
+    # Save final model and normalization stats
+    final_model_path = f"{sess_path}/poke_final"
+    model.save(final_model_path)
+    env.save(f"{final_model_path}_vecnormalize.pkl")
 
     if use_wandb_logging:
         run.finish()
