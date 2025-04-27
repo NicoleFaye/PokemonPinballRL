@@ -26,7 +26,6 @@ class VecNormCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.n_calls % self.save_freq == 0:
-            # model.save already called elsewhere
             vecnormalize = self.model.get_vec_normalize_env()
             vecnormalize.save(f"{self.save_path}/{self.name_prefix}_{self.num_timesteps}_vecnormalize.pkl")
         return True
@@ -106,7 +105,7 @@ if __name__ == "__main__":
     # Add VecNormalize wrapper
     env = VecNormalize(
         env,
-        norm_obs=False,  # Set to False since you handle observation normalization
+        norm_obs=False,
         norm_reward=True,
         clip_obs=10.0,
         clip_reward=10.0,
@@ -148,14 +147,12 @@ if __name__ == "__main__":
             sync_tensorboard=True,
             monitor_gym=True,
             save_code=True,
-            dir=str(sess_path),  # Store wandb data in the session folder
+            dir=str(sess_path),  
         )
         
-        # Configure WandB callback with minimal options
         wandb_callback = WandbCallback(verbose=1)
         callbacks.append(wandb_callback)
 
-    # Define a smaller n_steps for the buffer size to avoid memory issues
     train_steps_batch = 2048  # Standard PPO default
 
     # Check for resume checkpoint
@@ -192,19 +189,15 @@ if __name__ == "__main__":
 
         train_target = model.num_timesteps + time_steps
     else:
-        # Set PPO to log directly to the metrics directory, without any prefix
         model = PPO("MultiInputPolicy", env, verbose=1, n_steps=train_steps_batch, batch_size=512, n_epochs=1, 
               gamma=gamma, ent_coef=0.01, tensorboard_log=None)
         
-        train_target = time_steps
-              
-        # Configure the logger to use the session path
-        from stable_baselines3.common.logger import configure
         model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
+
+        train_target = time_steps
     
     print(model.policy)
 
-    # Use the timesteps parameter for training
     model.learn(total_timesteps=train_target, callback=CallbackList(callbacks),reset_num_timesteps=reset_flag)
 
     # Save final model and normalization stats
