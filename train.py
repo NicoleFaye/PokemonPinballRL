@@ -11,10 +11,25 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 from stable_baselines3.common.monitor import Monitor
 from pokemon_pinball_env import PokemonPinballEnv
-
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.logger import configure
 
 import signal # Aggressively exit on ctrl+c
 signal.signal(signal.SIGINT, lambda sig, frame: _exit(0))
+
+class VecNormCallback(BaseCallback):
+    def __init__(self, save_freq, save_path, name_prefix, verbose=0):
+        super().__init__(verbose)
+        self.save_freq = save_freq
+        self.save_path = save_path
+        self.name_prefix = name_prefix
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.save_freq == 0:
+            # model.save already called elsewhere
+            vecnormalize = self.model.get_vec_normalize_env()
+            vecnormalize.save(f"{self.save_path}/{self.name_prefix}_{self.num_timesteps}_vecnormalize.pkl")
+        return True
 
 def make_env(rank, env_conf, seed=0):
     """
@@ -68,21 +83,14 @@ if __name__ == "__main__":
     from datetime import datetime
     
     # Create a unique timestamp for this run or extract session ID from resume path
-    is_resuming = args.resume and exists(args.resume)
-    
-    if is_resuming:
+    if args.resume:
         # Extract the session ID from the resume path
         resume_path = Path(args.resume)
-        # If the resume path includes a runs directory, use that session ID
-        if "runs" in str(resume_path):
-            # Get the parent directory which should be the session directory
-            sess_id = resume_path.parent.name
-        else:
-            # If just a checkpoint name was provided, use a new session ID
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            sess_id = f"{env_config['reward_shaping']}_resumed_{timestamp}"
+        reset_flag = False
+        sess_id = resume_path.parent.name
     else:
         # New run
+        reset_flag = True
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         sess_id = f"{env_config['reward_shaping']}_{timestamp}"
     
@@ -112,10 +120,14 @@ if __name__ == "__main__":
         save_path=sess_path,
         name_prefix="poke"
     )
+    normalize_callback = VecNormCallback(
+        save_freq=time_steps//save_freq_divisor,
+        save_path=sess_path,
+        name_prefix="poke"
+    )
     
-    callbacks = [checkpoint_callback]
+    callbacks = [checkpoint_callback, normalize_callback]
 
-    wandb_run = None
     if use_wandb_logging:
         import wandb
         from wandb.integration.sb3 import WandbCallback
@@ -123,48 +135,21 @@ if __name__ == "__main__":
         # Make sure runs directory exists
         makedirs(sess_path, exist_ok=True)
         
-        # Initialize WandB with correct resuming behavior
-        if is_resuming:
-            # Look for a wandb ID file in the session directory
-            wandb_id_file = Path(sess_path) / "wandb_id.txt"
-            wandb_id = None
-            
-            if wandb_id_file.exists():
-                with open(wandb_id_file, "r") as f:
-                    wandb_id = f.read().strip()
-                print(f"Resuming wandb run with ID: {wandb_id}")
-            
-            # Initialize with resume=True if we have an ID
-            wandb_run = wandb.init(
-                project="pokemon-train-test",
-                id=wandb_id,
-                name=sess_id,
-                resume="must" if wandb_id else "allow",
-                config=env_config,
-                sync_tensorboard=True,
-                monitor_gym=True,
-                save_code=True,
-                dir=str(sess_path),
-            )
-        else:
-            # Patch TensorBoard at the root level to capture all grouped metrics
-            wandb.tensorboard.patch(root_logdir=str(sess_path))
-            
-            # Regular initialization for new runs
-            wandb_run = wandb.init(
-                project="pokemon-train-test",
-                id=sess_id,
-                name=sess_id,
-                config=env_config,
-                sync_tensorboard=True,
-                monitor_gym=True,
-                save_code=True,
-                dir=str(sess_path),  # Store wandb data in the session folder
-            )
-            
-            # Save the wandb run ID for potential future resuming
-            with open(Path(sess_path) / "wandb_id.txt", "w") as f:
-                f.write(wandb_run.id)
+        # Patch TensorBoard at the root level to capture all grouped metrics
+        wandb.tensorboard.patch(root_logdir=str(sess_path))
+        
+        # Initialize WandB
+        run = wandb.init(
+            project="pokemon-train-test",
+            id=sess_id,
+            resume="allow",
+            name=sess_id,
+            config=env_config,
+            sync_tensorboard=True,
+            monitor_gym=True,
+            save_code=True,
+            dir=str(sess_path),  # Store wandb data in the session folder
+        )
         
         # Configure WandB callback with minimal options
         wandb_callback = WandbCallback(verbose=1)
@@ -180,7 +165,7 @@ if __name__ == "__main__":
     if not checkpoint_path and not sys.stdin.isatty():
         checkpoint_path = sys.stdin.read().strip()
     
-    if is_resuming:
+    if checkpoint_path and exists(checkpoint_path):
         print(f"\nResuming from checkpoint: {checkpoint_path}")
         
         # Check if normalization stats exist alongside the checkpoint
@@ -202,10 +187,16 @@ if __name__ == "__main__":
         model.rollout_buffer.buffer_size = train_steps_batch
         model.rollout_buffer.n_envs = num_cpu
         model.rollout_buffer.reset()
+
+        model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
+
+        train_target = model.num_timesteps + time_steps
     else:
         # Set PPO to log directly to the metrics directory, without any prefix
         model = PPO("MultiInputPolicy", env, verbose=1, n_steps=train_steps_batch, batch_size=512, n_epochs=1, 
               gamma=gamma, ent_coef=0.01, tensorboard_log=None)
+        
+        train_target = time_steps
               
         # Configure the logger to use the session path
         from stable_baselines3.common.logger import configure
@@ -214,14 +205,12 @@ if __name__ == "__main__":
     print(model.policy)
 
     # Use the timesteps parameter for training
-    # Important: When resuming, set reset_num_timesteps to False
-    model.learn(total_timesteps=time_steps, callback=CallbackList(callbacks), 
-                reset_num_timesteps=not is_resuming)
+    model.learn(total_timesteps=train_target, callback=CallbackList(callbacks),reset_num_timesteps=reset_flag)
 
     # Save final model and normalization stats
     final_model_path = f"{sess_path}/poke_final"
     model.save(final_model_path)
     env.save(f"{final_model_path}_vecnormalize.pkl")
 
-    if use_wandb_logging and wandb_run:
-        wandb_run.finish()
+    if use_wandb_logging:
+        run.finish()
