@@ -17,7 +17,7 @@ Pokemon Pinball RL uses deep reinforcement learning to play Pokemon Pinball. The
 
 - Python 3.8+
 - ROM file for Pokemon Pinball (not included)
-- Pyboy with updated pokemon pinball game wrapper updated to have reset_tracking method (may require manual build of current master branch)
+- Pyboy with updated pokemon pinball game wrapper updated to have reset_tracking method (may require manual build of current master branch of pyboy)
 
 ## Usage
 
