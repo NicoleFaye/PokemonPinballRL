@@ -69,7 +69,11 @@ The project implements different reward shaping strategies:
 
 ## Acknowledgments
 
+Thank you to the following projects for either their library usage or for my reference for the creation of this repo
+
 - [PyBoy](https://github.com/Baekalfen/PyBoy): Game Boy emulator
+- [Pokemon Red Experiments](https://github.com/PWhiddy/PokemonRedExperiments): Pokemon Red RL project using pyboy
+- [Pret Pokemon Pinball Dissassebly](https://github.com/pret/pokepinball): Dissassembly of Pokemon pinball for GBC
 - [Stable Baselines 3](https://github.com/DLR-RM/stable-baselines3): Reinforcement learning library
 - [Gymnasium](https://gymnasium.farama.org/): Reinforcement learning environment interface
 - [WandB](https://wandb.ai/): Experiment tracking
