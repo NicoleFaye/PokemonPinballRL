@@ -51,8 +51,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Pokemon Pinball RL agent')
     parser.add_argument('--timesteps', type=int, default=10_000_000,
                         help='Number of timesteps to train for (default: 10,000,000)')
-    parser.add_argument('--window_size', type=int, default=100,
-                        help='Size of window for rolling metrics (default: 100)')
     parser.add_argument('--reward_mode', type=str, default='basic', choices=['basic', 'catch_focused', 'comprehensive'],
                         help='Reward shaping mode (default: basic)')
     parser.add_argument('--headless', action='store_true', help='Run in headless mode')
