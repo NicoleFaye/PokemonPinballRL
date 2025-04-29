@@ -5,8 +5,8 @@ import itertools
 param_values = {
     "n-steps":    [1024, 2048, 4096],
     "batch-size": [256, 512, 1024],
-    "n-epochs":   [1, 2, 4],
-    "gamma":      [0.99, 0.997, 0.999],
+    "n-epochs":   [1, 2],
+    "gamma":      [0.997, 0.999],
     "ent-coef":   [0.005, 0.01, 0.02],
     "policy":     ["MultiInputPolicy", "CnnPolicy"]
 }
