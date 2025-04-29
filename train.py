@@ -7,24 +7,28 @@ import suppress_warnings  # Import the warning suppression module first
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
+from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList, BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
 from pokemon_pinball_env import PokemonPinballEnv
 import signal  # Aggressively exit on ctrl+c
 signal.signal(signal.SIGINT, lambda sig, frame: _exit(0))
 
-class VecNormCallback:
+
+class VecNormCallback(BaseCallback):
+    """Callback for saving VecNormalize statistics at regular intervals."""
     def __init__(self, save_freq, save_path, name_prefix, verbose=0):
+        super().__init__(verbose)
         self.save_freq = save_freq
         self.save_path = save_path
         self.name_prefix = name_prefix
-        self.verbose = verbose
 
-    def _on_step(self, model, callback):
-        if model.num_timesteps % self.save_freq == 0:
-            vecnorm = model.get_vec_normalize_env()
-            vecnorm.save(f"{self.save_path}/{self.name_prefix}_{model.num_timesteps}_vecnormalize.pkl")
+    def _on_step(self) -> bool:
+        # Save normalization stats every save_freq calls
+        if self.n_calls % self.save_freq == 0:
+            vecnorm = self.model.get_vec_normalize_env()
+            # Use num_timesteps for naming consistency
+            vecnorm.save(f"{self.save_path}/{self.name_prefix}_{self.num_timesteps}_vecnormalize.pkl")
         return True
 
 
