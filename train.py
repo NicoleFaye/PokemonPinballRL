@@ -11,8 +11,9 @@ from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList,
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
 from pokemon_pinball_env import PokemonPinballEnv
-import signal  # Aggressively exit on ctrl+c
-signal.signal(signal.SIGINT, lambda sig, frame: _exit(0))
+
+#import signal  # Aggressively exit on ctrl+c
+#signal.signal(signal.SIGINT, lambda sig, frame: _exit(0))
 
 
 class VecNormCallback(BaseCallback):
