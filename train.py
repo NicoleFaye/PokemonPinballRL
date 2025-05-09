@@ -82,6 +82,32 @@ class RewardMonitorCallback(BaseCallback):
         return True
 
 
+class LearningRateMonitorCallback(BaseCallback):
+    """Callback for monitoring learning rate during training."""
+    def __init__(self, verbose=0, log_freq=1000):
+        super().__init__(verbose)
+        self.log_freq = log_freq
+    
+    def _on_step(self) -> bool:
+        if self.n_calls % self.log_freq == 0:
+            # Get current learning rate from the optimizer
+            if hasattr(self.model, 'policy') and hasattr(self.model.policy, 'optimizer'):
+                for param_group in self.model.policy.optimizer.param_groups:
+                    current_lr = param_group['lr']
+                    
+                    # Log to console
+                    print(f"Step: {self.n_calls}, Current learning rate: {current_lr}")
+                    
+                    # Log to tensorboard
+                    self.logger.record("train/learning_rate", current_lr)
+                    
+                    # Log to wandb if available
+                    if 'wandb' in sys.modules and hasattr(sys.modules['wandb'], 'log'):
+                        import wandb
+                        wandb.log({"learning_rate": current_lr}, step=self.num_timesteps)
+        return True
+
+
 def configure_learning_rate(initial_lr, schedule_type, final_lr_fraction=0.1):
     """
     Configure the learning rate scheduler based on the specified type.
@@ -118,6 +144,7 @@ def configure_learning_rate(initial_lr, schedule_type, final_lr_fraction=0.1):
         print(f"Warning: Unrecognized schedule type '{schedule_type}'. Using constant learning rate.")
         return constant_fn(initial_lr)
 
+
 def make_env(rank, env_conf, seed=0):
     def _init():
         env = PokemonPinballEnv("./roms/pokemon_pinball.gbc", env_conf)
@@ -126,6 +153,7 @@ def make_env(rank, env_conf, seed=0):
         return env
     set_random_seed(seed)
     return _init
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Pokemon Pinball RL agent')
@@ -211,7 +239,8 @@ if __name__ == "__main__":
     checkpoint_callback = CheckpointCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
     normalize_callback = VecNormCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
     reward_monitor_callback = RewardMonitorCallback(log_freq=args.log_freq)
-    callbacks = [checkpoint_callback, normalize_callback, reward_monitor_callback]
+    lr_monitor_callback = LearningRateMonitorCallback(log_freq=max(1, time_steps//100))  # Log LR ~100 times during training
+    callbacks = [checkpoint_callback, normalize_callback, reward_monitor_callback, lr_monitor_callback]
 
     # Optional WandB logging
     if use_wandb:
@@ -231,11 +260,26 @@ if __name__ == "__main__":
                         'reward_clip': args.reward_clip,
                         'clip_range': args.clip_range,
                         'max_grad_norm': args.max_grad_norm,
+                        'learning_rate': args.learning_rate,
+                        'lr_schedule': args.lr_schedule,
+                        'final_lr_fraction': args.final_lr_fraction
                         }
         run = wandb.init(project=args.wandb_project, id=sess_id, resume="allow",
                          name=sess_id, config=wandb_config, sync_tensorboard=True,
                          monitor_gym=True, save_code=True, dir=str(sess_path))
         callbacks.append(WandbCallback(verbose=1))
+
+    # Configure learning rate based on arguments
+    lr_schedule = configure_learning_rate(
+        args.learning_rate, 
+        args.lr_schedule, 
+        args.final_lr_fraction
+    )
+    print(f"Learning rate configuration:")
+    print(f"  Initial rate: {args.learning_rate}")
+    print(f"  Schedule: {args.lr_schedule}")
+    if args.lr_schedule != 'constant':
+        print(f"  Final rate: {args.learning_rate * args.final_lr_fraction}")
 
     # Initialize or resume model
     if args.resume and exists(args.resume):
@@ -250,7 +294,14 @@ if __name__ == "__main__":
             env.clip_reward = args.reward_clip
         else:
             print("No normalization stats found, using default initialization")
+        
         model = PPO.load(args.resume, env=env)
+        
+        # Note about learning rate when resuming
+        print("NOTE: When resuming, the original learning rate schedule from the checkpoint is used.")
+        print("      The learning rate arguments provided now won't affect the resumed training.")
+        print("      This is a limitation of the current Stable Baselines 3 implementation.")
+        
         model.n_steps = train_steps_batch
         model.n_envs = num_cpu
         model.rollout_buffer.buffer_size = train_steps_batch
@@ -259,10 +310,11 @@ if __name__ == "__main__":
         model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
         train_target = model.num_timesteps + time_steps
     else:
+        # For new model, use the configured learning rate schedule
         model = PPO(args.policy, env, verbose=1, n_steps=train_steps_batch,
-                    batch_size=args.batch_size, n_epochs=args.n_epochs,gae_lambda=args.gae_lambda,
+                    batch_size=args.batch_size, n_epochs=args.n_epochs, gae_lambda=args.gae_lambda,
                     gamma=gamma, ent_coef=args.ent_coef, tensorboard_log=None,
-                    clip_range=args.clip_range,
+                    clip_range=args.clip_range, learning_rate=lr_schedule,  # Apply the learning rate schedule
                     max_grad_norm=args.max_grad_norm)
         model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
         train_target = time_steps
