@@ -49,18 +49,19 @@ if __name__ == "__main__":
     parser.add_argument('--n-steps', type=int, default=2048, help='Number of steps per update (n_steps)')
     parser.add_argument('--batch-size', type=int, default=512, help='Mini-batch size for PPO')
     parser.add_argument('--n-epochs', type=int, default=1, help='Number of epochs per update')
-    parser.add_argument('--gamma', type=float, default=0.997, help='Discount factor')
+    parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
     parser.add_argument('--ent-coef', type=float, default=0.01, help='Entropy coefficient')
     parser.add_argument('--policy', type=str, default='MultiInputPolicy', help='PPO policy')
     # Environment configuration
     parser.add_argument('--reward-mode', type=str, default='basic', choices=['basic', 'catch_focused', 'comprehensive'], help='Reward shaping mode')
     parser.add_argument('--frame-stack', type=int, default=4, help='Number of frames to stack')
-    parser.add_argument('--frame-skip', type=int, default=2, help='Number of frames to skip')
+    parser.add_argument('--frame-skip', type=int, default=4, help='Number of frames to skip')
     parser.add_argument('--visual-mode', type=str, default='screen', choices=['screen', 'game_area'], help='Visual observation mode')
-    parser.add_argument('--info-level', type=int, default=2, choices=[0, 1, 2, 3], help='Info level for environment')
-    parser.add_argument('--frame-stack-extra-observation', action='store_true', help='Include extra frame-stack observations (positions & velocities)')
+    parser.add_argument('--info-level', type=int, default=1, choices=[0, 1, 2, 3], help='Info level for environment')
+    parser.add_argument('--no-frame-stack-extra-observation',dest='frame_stack_extra_observation', action='store_false', help='Include extra frame-stack observations (positions & velocities)')
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable downsampling screen resolution')
     parser.set_defaults(reduce_screen_resolution=True)
+    parser.set_defaults(frame_stack_extra_observation=True)
     # Logging and runtime options
     parser.add_argument('--headless', action='store_true', help='Run without rendering')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode (normal speed)')
@@ -109,7 +110,7 @@ if __name__ == "__main__":
 
     # Create vectorized environments
     env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
-    env = VecNormalize(env, norm_obs=False, norm_reward=True, clip_obs=10.0, clip_reward=10.0, gamma=gamma, epsilon=1e-8)
+    env = VecNormalize(env, norm_obs=False, norm_reward=True, clip_obs=5.0, clip_reward=5.0, gamma=gamma, epsilon=1e-8)
 
     # Setup callbacks
     checkpoint_callback = CheckpointCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
