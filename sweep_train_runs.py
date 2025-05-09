@@ -3,12 +3,19 @@ import itertools
 
 # Define hyperparameter values for the sweep (lists of values to try)
 param_values = {
-    "n-steps":    [2048],
-    "batch-size": [1024],
+    "n-steps":    [128,256,512],
+    "batch-size": [256],
     "n-epochs":   [4],
-    "gamma":      [0.997],
+    "gamma":      [0.99],
+    "learning-rate": [.00025],
+    "lr-schedule": ["linear"],
+    "final-lr-fraction": [0.1],
+    "gae-lambda": [0.95],
     "ent-coef":   [ 0.01],
-    "policy":     ["MultiInputPolicy"]
+    "clip-range": [0.2],#[0.1, 0.2],
+    "policy":     ["MultiInputPolicy"],
+    "reward-mode": ["basic","progressive"],
+    "timesteps": [12_500_000],
 }
 
 # Optionally, you can narrow down combinations or modify the lists above 
