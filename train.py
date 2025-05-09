@@ -6,7 +6,7 @@ from pathlib import Path
 import suppress_warnings  # Import the warning suppression module first
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
-from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.utils import get_linear_fn, get_schedule_fn, constant_fn, set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList, BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
@@ -33,6 +33,91 @@ class VecNormCallback(BaseCallback):
         return True
 
 
+class RewardMonitorCallback(BaseCallback):
+    """Monitor different reward components and normalized rewards"""
+    def __init__(self, verbose=0, log_freq=100):
+        super().__init__(verbose)
+        self.log_freq = log_freq
+        self.raw_rewards = []
+        self.shaped_rewards = []
+        self.normalized_rewards = []
+        self.clipped_rewards = []
+        
+    def _on_step(self) -> bool:
+        # Only log periodically to avoid slowdown
+        if self.n_calls % self.log_freq == 0:
+            # Get the VecNormalize wrapper
+            vec_normalize = self.model.get_vec_normalize_env()
+            
+            # Get raw rewards (before normalization)
+            if hasattr(vec_normalize, 'return_rms'):
+                # Sample some recent rewards
+                recent_rewards = vec_normalize.unwrapped.get_attr('_fitness')[:5]  # First 5 envs
+                recent_raw_diffs = vec_normalize.unwrapped.get_attr('_fitness')[:5] - \
+                                   vec_normalize.unwrapped.get_attr('_previous_fitness')[:5]
+                
+                # Calculate normalized values (mimicking VecNormalize internal logic)
+                if hasattr(vec_normalize.return_rms, 'mean') and hasattr(vec_normalize.return_rms, 'var'):
+                    norm_mean = vec_normalize.return_rms.mean
+                    norm_var = vec_normalize.return_rms.var
+                    norm_std = norm_var ** 0.5
+                    
+                    # Calculate what normalized values would be
+                    normalized = [(r - norm_mean) / (norm_std + 1e-8) for r in recent_raw_diffs]
+                    # Calculate what clipped values would be
+                    clip_val = vec_normalize.clip_reward
+                    clipped = [max(min(r, clip_val), -clip_val) for r in normalized]
+                    
+                    # Log these values
+                    self.logger.record("reward/raw_rewards_mean", float(sum(recent_raw_diffs))/len(recent_raw_diffs))
+                    self.logger.record("reward/raw_rewards_min", float(min(recent_raw_diffs)))
+                    self.logger.record("reward/raw_rewards_max", float(max(recent_raw_diffs)))
+                    self.logger.record("reward/norm_mean", float(norm_mean))
+                    self.logger.record("reward/norm_std", float(norm_std))
+                    self.logger.record("reward/normalized_rewards_mean", float(sum(normalized))/len(normalized))
+                    self.logger.record("reward/normalized_rewards_min", float(min(normalized)))
+                    self.logger.record("reward/normalized_rewards_max", float(max(normalized)))
+                    self.logger.record("reward/clipped_percent", 
+                                      100 * sum(1 for r in normalized if r > clip_val or r < -clip_val) / len(normalized))
+        return True
+
+
+def configure_learning_rate(initial_lr, schedule_type, final_lr_fraction=0.1):
+    """
+    Configure the learning rate scheduler based on the specified type.
+    
+    Args:
+        initial_lr: Initial learning rate value
+        schedule_type: Type of schedule ('constant', 'linear', or 'exponential')
+        final_lr_fraction: Final learning rate as a fraction of initial (for non-constant schedules)
+        
+    Returns:
+        A callable learning rate schedule function
+    """
+    final_lr = initial_lr * final_lr_fraction
+    
+    if schedule_type == 'constant':
+        # No decay - constant learning rate
+        return constant_fn(initial_lr)
+    
+    elif schedule_type == 'linear':
+        # Linear decay from initial_lr to final_lr
+        return get_linear_fn(initial_lr, final_lr, 1.0)
+    
+    elif schedule_type == 'exponential':
+        # Custom exponential decay function
+        def exponential_schedule(progress_remaining):
+            # Exponential decay from initial_lr to final_lr
+            # progress_remaining goes from 1.0 to 0.0
+            return final_lr + (initial_lr - final_lr) * progress_remaining ** 2
+        
+        return exponential_schedule
+    
+    else:
+        # Default to constant if unrecognized schedule type
+        print(f"Warning: Unrecognized schedule type '{schedule_type}'. Using constant learning rate.")
+        return constant_fn(initial_lr)
+
 def make_env(rank, env_conf, seed=0):
     def _init():
         env = PokemonPinballEnv("./roms/pokemon_pinball.gbc", env_conf)
@@ -52,14 +137,21 @@ if __name__ == "__main__":
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
     parser.add_argument('--ent-coef', type=float, default=0.01, help='Entropy coefficient')
     parser.add_argument('--policy', type=str, default='MultiInputPolicy', help='PPO policy')
+    parser.add_argument('--clip-range', type=float, default=0.2, help='PPO clip range')
+    parser.add_argument('--max-grad-norm', type=float, default=0.5, help='Max gradient norm for clipping')
+    parser.add_argument('--gae-lambda', type=float, default=0.95, help='GAE lambda for advantage estimation')
+    parser.add_argument('--learning-rate', type=float, default=2.5e-4,help='Initial learning rate (default: 2.5e-4 as recommended for Atari games)')
+    parser.add_argument('--lr-schedule', type=str, default='linear', choices=['constant', 'linear', 'exponential'],help='Learning rate schedule type (default: linear)')
+    parser.add_argument('--final-lr-fraction', type=float, default=0.1,help='Final learning rate as a fraction of initial rate (default: 0.1, 10% of initial rate)')
     # Environment configuration
-    parser.add_argument('--reward-mode', type=str, default='basic', choices=['basic', 'catch_focused', 'comprehensive'], help='Reward shaping mode')
+    parser.add_argument('--reward-mode', type=str, default='basic', choices=['basic', 'catch_focused', 'comprehensive','progressive'], help='Reward shaping mode')
     parser.add_argument('--frame-stack', type=int, default=4, help='Number of frames to stack')
     parser.add_argument('--frame-skip', type=int, default=4, help='Number of frames to skip')
     parser.add_argument('--visual-mode', type=str, default='screen', choices=['screen', 'game_area'], help='Visual observation mode')
     parser.add_argument('--info-level', type=int, default=1, choices=[0, 1, 2, 3], help='Info level for environment')
     parser.add_argument('--no-frame-stack-extra-observation',dest='frame_stack_extra_observation', action='store_false', help='Include extra frame-stack observations (positions & velocities)')
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable downsampling screen resolution')
+    parser.add_argument('--reward-clip', type=float, default=3.0, help='Reward clipping value')
     parser.set_defaults(reduce_screen_resolution=True)
     parser.set_defaults(frame_stack_extra_observation=True)
     # Logging and runtime options
@@ -70,6 +162,7 @@ if __name__ == "__main__":
     parser.add_argument('--resume', type=str, help='Path to checkpoint to resume from (.zip)')
     parser.add_argument('--num-cpu', type=int, default=6, help='Number of parallel environments')
     parser.add_argument('--save-freq-divisor', type=int, default=200, help='Divisor for checkpoint save frequency')
+    parser.add_argument('--log-freq', type=int, default=100, help='Frequency for logging reward statistics')
     args = parser.parse_args()
 
     # Assign parameters
@@ -110,12 +203,15 @@ if __name__ == "__main__":
 
     # Create vectorized environments
     env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
-    env = VecNormalize(env, norm_obs=False, norm_reward=True, clip_obs=5.0, clip_reward=5.0, gamma=gamma, epsilon=1e-8)
+    env = VecNormalize(env, norm_obs=False, norm_reward=True, 
+                       clip_obs=5.0, clip_reward=args.reward_clip, 
+                       gamma=gamma, epsilon=1e-8)
 
     # Setup callbacks
     checkpoint_callback = CheckpointCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
     normalize_callback = VecNormCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
-    callbacks = [checkpoint_callback, normalize_callback]
+    reward_monitor_callback = RewardMonitorCallback(log_freq=args.log_freq)
+    callbacks = [checkpoint_callback, normalize_callback, reward_monitor_callback]
 
     # Optional WandB logging
     if use_wandb:
@@ -130,7 +226,12 @@ if __name__ == "__main__":
                         'batch_size': args.batch_size,
                         'n_epochs': args.n_epochs,
                         'ent_coef': args.ent_coef,
-                        'num_cpu': num_cpu}
+                        'gae_lambda': args.gae_lambda,
+                        'num_cpu': num_cpu,
+                        'reward_clip': args.reward_clip,
+                        'clip_range': args.clip_range,
+                        'max_grad_norm': args.max_grad_norm,
+                        }
         run = wandb.init(project=args.wandb_project, id=sess_id, resume="allow",
                          name=sess_id, config=wandb_config, sync_tensorboard=True,
                          monitor_gym=True, save_code=True, dir=str(sess_path))
@@ -145,6 +246,8 @@ if __name__ == "__main__":
             env = VecNormalize.load(norm_path, env)
             env.training = True
             env.norm_obs = False
+            # Make sure to update the clip_reward value to the current setting
+            env.clip_reward = args.reward_clip
         else:
             print("No normalization stats found, using default initialization")
         model = PPO.load(args.resume, env=env)
@@ -157,8 +260,10 @@ if __name__ == "__main__":
         train_target = model.num_timesteps + time_steps
     else:
         model = PPO(args.policy, env, verbose=1, n_steps=train_steps_batch,
-                    batch_size=args.batch_size, n_epochs=args.n_epochs,
-                    gamma=gamma, ent_coef=args.ent_coef, tensorboard_log=None)
+                    batch_size=args.batch_size, n_epochs=args.n_epochs,gae_lambda=args.gae_lambda,
+                    gamma=gamma, ent_coef=args.ent_coef, tensorboard_log=None,
+                    clip_range=args.clip_range,
+                    max_grad_norm=args.max_grad_norm)
         model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
         train_target = time_steps
 
