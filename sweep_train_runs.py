@@ -3,12 +3,12 @@ import itertools
 
 # Define hyperparameter values for the sweep (lists of values to try)
 param_values = {
-    "n-steps":    [1024, 2048, 4096],
-    "batch-size": [256, 512, 1024],
-    "n-epochs":   [1, 2],
-    "gamma":      [0.997, 0.999],
-    "ent-coef":   [0.005, 0.01, 0.02],
-    "policy":     ["MultiInputPolicy", "CnnPolicy"]
+    "n-steps":    [2048],
+    "batch-size": [1024],
+    "n-epochs":   [4],
+    "gamma":      [0.997],
+    "ent-coef":   [ 0.01],
+    "policy":     ["MultiInputPolicy"]
 }
 
 # Optionally, you can narrow down combinations or modify the lists above 
