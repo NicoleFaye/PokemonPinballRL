@@ -157,6 +157,8 @@ class PokemonPinballEnv(gym.Env):
             self.reward_shaping = RewardShaping.catch_focused
         elif reward_shaping_name == 'comprehensive':
             self.reward_shaping = RewardShaping.comprehensive
+        elif reward_shaping_name == 'progressive':
+            self.reward_shaping = RewardShaping.progressive
         else:
             self.reward_shaping = None
             
