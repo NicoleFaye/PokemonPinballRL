@@ -147,7 +147,13 @@ class RewardShaping:
             
         # Determine current skill phase based on best score and survival rate
         skill_phase = prev_state.get('skill_phase', 0)
-        if current_fitness > prev_state.get('phase_threshold')[min(2, skill_phase)]:
+        
+        # Get phase_threshold with a default value if not found
+        phase_threshold = prev_state.get('phase_threshold', [5000, 50000, 200000])
+        
+        # Ensure we have a valid index and threshold
+        threshold_index = min(2, skill_phase)
+        if current_fitness > phase_threshold[threshold_index]:
             skill_phase = min(3, skill_phase + 1)
             prev_state['skill_phase'] = skill_phase
             
