@@ -43,7 +43,7 @@ DEFAULT_CONFIG = {
     "reward_shaping": None,
     "info_level": 2,
     "frame_stack": 4,
-    "frame_skip": 3,
+    "frame_skip": 4,
     "visual_mode": "game_area",  # alternative is "screen" for full RGB screen
     "frame_stack_extra_observation": False,
     "reduce_screen_resolution": True,  # Downsample full screen by factor of 2 when using "screen" mode
