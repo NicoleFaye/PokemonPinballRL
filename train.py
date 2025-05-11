@@ -169,8 +169,10 @@ if __name__ == "__main__":
     parser.add_argument('--max-grad-norm', type=float, default=0.5, help='Max gradient norm for clipping')
     parser.add_argument('--gae-lambda', type=float, default=0.95, help='GAE lambda for advantage estimation')
     parser.add_argument('--learning-rate', type=float, default=2.5e-4,help='Initial learning rate (default: 2.5e-4 as recommended for Atari games)')
-    parser.add_argument('--lr-schedule', type=str, default='linear', choices=['constant', 'linear', 'exponential'],help='Learning rate schedule type (default: linear)')
+    parser.add_argument('--lr-schedule', type=str, default='constant', choices=['constant', 'linear', 'exponential'],help='Learning rate schedule type (default: constant)')
+    parser.add_argument('--clip-range-schedule', type=str, default='constant', choices=['constant', 'linear', 'exponential'],help='Clip range schedule type (default: constant)')
     parser.add_argument('--final-lr-fraction', type=float, default=0.1,help='Final learning rate as a fraction of initial rate (default: 0.1, 10% of initial rate)')
+    parser.add_argument('--final-clip-range-fraction', type=float, default=0.1,help='Final clip value as a fraction of initial rate (default: 0.1, 10% of initial value)')
     # Environment configuration
     parser.add_argument('--seed', type=int, default=0, help='Random seed for environment')
     parser.add_argument('--reward-mode', type=str, default='basic', choices=['basic', 'catch_focused', 'comprehensive','progressive'], help='Reward shaping mode')
@@ -262,6 +264,8 @@ if __name__ == "__main__":
                         'num_cpu': num_cpu,
                         'reward_clip': args.reward_clip,
                         'clip_range': args.clip_range,
+                        'clip_range_schedule': args.clip_range_schedule,
+                        'final_clip_range_fraction': args.final_clip_fraction,
                         'max_grad_norm': args.max_grad_norm,
                         'learning_rate': args.learning_rate,
                         'lr_schedule': args.lr_schedule,
@@ -279,11 +283,22 @@ if __name__ == "__main__":
         args.lr_schedule, 
         args.final_lr_fraction
     )
+    clip_range_schedule = configure_decay_rate(
+        args.clip_range, 
+        args.clip_range_schedule, 
+        args.final_clip_fraction
+    )
     print(f"Learning rate configuration:")
     print(f"  Initial rate: {args.learning_rate}")
     print(f"  Schedule: {args.lr_schedule}")
     if args.lr_schedule != 'constant':
         print(f"  Final rate: {args.learning_rate * args.final_lr_fraction}")
+
+    print(f"Clip range configuration:")
+    print(f"  Initial clip range: {args.clip_range}")
+    print(f"  Schedule: {args.clip_range_schedule}")
+    if args.clip_range_schedule != 'constant':
+        print(f"  Final clip range: {args.clip_range * args.final_clip_range_fraction}")
 
     # Initialize or resume model
     if args.resume and exists(args.resume):
