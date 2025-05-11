@@ -265,7 +265,8 @@ if __name__ == "__main__":
                         'max_grad_norm': args.max_grad_norm,
                         'learning_rate': args.learning_rate,
                         'lr_schedule': args.lr_schedule,
-                        'final_lr_fraction': args.final_lr_fraction
+                        'final_lr_fraction': args.final_lr_fraction,
+                        'seed': args.seed,
                         }
         run = wandb.init(project=args.wandb_project, id=sess_id, resume="allow",
                          name=sess_id, config=wandb_config, sync_tensorboard=True,
