@@ -177,6 +177,7 @@ if __name__ == "__main__":
     parser.add_argument('--frame-skip', type=int, default=4, help='Number of frames to skip')
     parser.add_argument('--visual-mode', type=str, default='screen', choices=['screen', 'game_area'], help='Visual observation mode')
     parser.add_argument('--info-level', type=int, default=1, choices=[0, 1, 2, 3], help='Info level for environment')
+    parser.add_argument('--max-episode-frames', type=int, default=0, help='Max frames per episode')
     parser.add_argument('--no-frame-stack-extra-observation',dest='frame_stack_extra_observation', action='store_false', help='Include extra frame-stack observations (positions & velocities)')
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable downsampling screen resolution')
     parser.add_argument('--reward-clip', type=float, default=3.0, help='Reward clipping value')
@@ -209,7 +210,8 @@ if __name__ == "__main__":
         'frame_skip': args.frame_skip,
         'visual_mode': args.visual_mode,
         'frame_stack_extra_observation': args.frame_stack_extra_observation,
-        'reduce_screen_resolution': args.reduce_screen_resolution
+        'reduce_screen_resolution': args.reduce_screen_resolution,
+        'max_episode_frames': args.max_episode_frames,
     }
 
     from datetime import datetime
