@@ -108,7 +108,7 @@ class LearningRateMonitorCallback(BaseCallback):
         return True
 
 
-def configure_learning_rate(initial_lr, schedule_type, final_lr_fraction=0.1):
+def configure_decay_rate(initial_value, schedule_type, final_value_fraction=0.1):
     """
     Configure the learning rate scheduler based on the specified type.
     
@@ -120,29 +120,29 @@ def configure_learning_rate(initial_lr, schedule_type, final_lr_fraction=0.1):
     Returns:
         A callable learning rate schedule function
     """
-    final_lr = initial_lr * final_lr_fraction
+    final_lr = initial_value * final_value_fraction
     
     if schedule_type == 'constant':
         # No decay - constant learning rate
-        return constant_fn(initial_lr)
+        return constant_fn(initial_value)
     
     elif schedule_type == 'linear':
         # Linear decay from initial_lr to final_lr
-        return get_linear_fn(initial_lr, final_lr, 1.0)
+        return get_linear_fn(initial_value, final_lr, 1.0)
     
     elif schedule_type == 'exponential':
         # Custom exponential decay function
         def exponential_schedule(progress_remaining):
             # Exponential decay from initial_lr to final_lr
             # progress_remaining goes from 1.0 to 0.0
-            return final_lr + (initial_lr - final_lr) * progress_remaining ** 2
+            return final_lr + (initial_value - final_lr) * progress_remaining ** 2
         
         return exponential_schedule
     
     else:
         # Default to constant if unrecognized schedule type
         print(f"Warning: Unrecognized schedule type '{schedule_type}'. Using constant learning rate.")
-        return constant_fn(initial_lr)
+        return constant_fn(initial_value)
 
 
 def make_env(rank, env_conf, seed=0):
@@ -274,7 +274,7 @@ if __name__ == "__main__":
         callbacks.append(WandbCallback(verbose=1))
 
     # Configure learning rate based on arguments
-    lr_schedule = configure_learning_rate(
+    lr_schedule = configure_decay_rate(
         args.learning_rate, 
         args.lr_schedule, 
         args.final_lr_fraction
