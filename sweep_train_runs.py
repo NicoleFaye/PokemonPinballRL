@@ -14,8 +14,8 @@ param_values = {
     "ent-coef":   [ 0.01],
     "clip-range": [0.2],#[0.1, 0.2],
     "policy":     ["MultiInputPolicy"],
-    "reward-mode": ["basic","progressive"],
-    "timesteps": [12_500_000],
+    "reward-mode": ["basic"],
+    "timesteps": [10_000_000],
 }
 
 # Optionally, you can narrow down combinations or modify the lists above 
@@ -26,7 +26,7 @@ print(f"Total combinations to run: {len(combinations)}")
 def run_training(config):
     """Launch a training run with the given hyperparameter config (dict)."""
     # Base command to run train.py with 10M timesteps and headless mode
-    cmd = ["python", "train.py", "--timesteps", "10000000", "--headless"]
+    cmd = ["python", "train.py", "--headless"]
     # Append hyperparameter flags from the config dict
     for param, val in config.items():
         cmd += [f"--{param}", str(val)]
