@@ -188,6 +188,9 @@ class PokemonPinballEnv(gym.Env):
             observations_dict.update({
                 'visual_representation': spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
             })
+
+        if info_level == 0:
+            return observations_dict.get('visual_representation')
         
         # Add spaces based on info level
         if info_level >= 1:
@@ -509,7 +512,7 @@ class PokemonPinballEnv(gym.Env):
         
         # Level 0 - no info
         if self.info_level == 0:
-            return observation
+            return observation.get('visual_representation')
         
         # Level 1 - position and velocity information
         if self.frame_stack_extra_observation:
