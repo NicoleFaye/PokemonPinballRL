@@ -47,6 +47,7 @@ DEFAULT_CONFIG = {
     "visual_mode": "game_area",  # alternative is "screen" for full RGB screen
     "frame_stack_extra_observation": False,
     "reduce_screen_resolution": True,  # Downsample full screen by factor of 2 when using "screen" mode
+    "max_episode_frames": 0,
 }
 
 
@@ -108,6 +109,8 @@ class PokemonPinballEnv(gym.Env):
         self.frame_stack_extra_observation = config['frame_stack_extra_observation']
         self.visual_mode = config['visual_mode']
         self.reduce_screen_resolution = config.get('reduce_screen_resolution', True)
+
+        self.max_episode_frames = config.get('max_episode_frames', 0)
         
         # Stuck detection parameters (always enabled)
         self.stuck_detection_window = max(50, self.frame_stack * 5)  # At least 5x the frame stack
@@ -259,9 +262,12 @@ class PokemonPinballEnv(gym.Env):
         # Get game state
         self._calculate_fitness()
         
+
+        max_frame_reached = self.max_episode_frames > 0 and self._frames_played >= self.max_episode_frames
+
         # Determine if game is over
         #done = self._game_wrapper.game_over
-        done = self._game_wrapper.lost_ball_during_saver or self._game_wrapper.game_over or self._game_wrapper.balls_left<2
+        done = self._game_wrapper.lost_ball_during_saver or self._game_wrapper.game_over or self._game_wrapper.balls_left<2 or max_frame_reached
         
         # Apply reward shaping by calling the reward function
         # but passing self for tracking state
