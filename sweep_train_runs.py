@@ -17,7 +17,7 @@ param_values = {
     "policy":     ["MultiInputPolicy"],
     "reward-mode": ["basic"],
     "timesteps": [10_000_000],
-    "seed": [1, 2, 3, 4, 5],
+    #"seed": [1, 2, 3, 4, 5],
 }
 
 # Optionally, you can narrow down combinations or modify the lists above 
