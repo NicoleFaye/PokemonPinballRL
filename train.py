@@ -172,6 +172,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr-schedule', type=str, default='linear', choices=['constant', 'linear', 'exponential'],help='Learning rate schedule type (default: linear)')
     parser.add_argument('--final-lr-fraction', type=float, default=0.1,help='Final learning rate as a fraction of initial rate (default: 0.1, 10% of initial rate)')
     # Environment configuration
+    parser.add_argument('--seed', type=int, default=0, help='Random seed for environment')
     parser.add_argument('--reward-mode', type=str, default='basic', choices=['basic', 'catch_focused', 'comprehensive','progressive'], help='Reward shaping mode')
     parser.add_argument('--frame-stack', type=int, default=4, help='Number of frames to stack')
     parser.add_argument('--frame-skip', type=int, default=4, help='Number of frames to skip')
@@ -232,7 +233,7 @@ if __name__ == "__main__":
     save_freq = max(1, time_steps // args.save_freq_divisor)
 
     # Create vectorized environments
-    env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
+    env = SubprocVecEnv([make_env(i, env_config, seed=args.seed) for i in range(num_cpu)])
     env = VecNormalize(env, norm_obs=False, norm_reward=True, 
                        clip_obs=5.0, clip_reward=args.reward_clip, 
                        gamma=gamma, epsilon=1e-8)
