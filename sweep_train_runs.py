@@ -3,8 +3,8 @@ import itertools
 
 # Define hyperparameter values for the sweep (lists of values to try)
 param_values_list = [{
-    "n-steps":    [256],
-    "batch-size": [256*6],
+    "n-steps":    [512],
+    "batch-size": [512*6],
     "n-epochs":   [4],
     "gamma":      [0.997],
     "learning-rate": [.00025],
@@ -22,8 +22,8 @@ param_values_list = [{
     "seed": [0],
 },
 {
-    "n-steps":    [512],
-    "batch-size": [512*6],
+    "n-steps":    [1024],
+    "batch-size": [1024*6],
     "n-epochs":   [4],
     "gamma":      [0.997],
     "learning-rate": [.00025],
@@ -37,7 +37,7 @@ param_values_list = [{
     "info-level": [1],
     "policy":     ["MultiInputPolicy"],
     "reward-mode": ["basic"],
-    "timesteps": [20_000_000],
+    "timesteps": [40_000_000],
     "seed": [0],
 }]
 
