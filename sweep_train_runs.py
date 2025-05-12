@@ -18,7 +18,7 @@ param_values_list = [{
     "info-level": [1],
     "policy":     ["MultiInputPolicy"],
     "reward-mode": ["basic"],
-    "timesteps": [20_000_000],
+    "timesteps": [10_000_000],
     "seed": [0],
 },
 {
@@ -37,7 +37,7 @@ param_values_list = [{
     "info-level": [1],
     "policy":     ["MultiInputPolicy"],
     "reward-mode": ["basic"],
-    "timesteps": [40_000_000],
+    "timesteps": [20_000_000],
     "seed": [0],
 }]
 
