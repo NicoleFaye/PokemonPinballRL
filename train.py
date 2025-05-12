@@ -225,7 +225,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-wandb', dest='no_wandb', action='store_true', help='Disable WandB logging')
     parser.add_argument('--wandb-project', type=str, default='pokemon-train-test', help='WandB project name')
     parser.add_argument('--resume', type=str, help='Path to checkpoint to resume from (.zip)')
-    parser.add_argument('--num-cpu', type=int, default=6, help='Number of parallel environments')
+    parser.add_argument('--num-cpu', type=int, default=8, help='Number of parallel environments')
     parser.add_argument('--save-freq-divisor', type=int, default=200, help='Divisor for checkpoint save frequency')
     parser.add_argument('--log-freq', type=int, default=100, help='Frequency for logging reward statistics')
     args = parser.parse_args()
