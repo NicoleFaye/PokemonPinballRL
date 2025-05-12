@@ -108,40 +108,73 @@ class LearningRateMonitorCallback(BaseCallback):
         return True
 
 
+class ClipRangeMonitorCallback(BaseCallback):
+    """Callback for monitoring clip range during training."""
+    def __init__(self, verbose=0, log_freq=1000):
+        super().__init__(verbose)
+        self.log_freq = log_freq
+    
+    def _on_step(self) -> bool:
+        if self.n_calls % self.log_freq == 0:
+            # Get current clip range value
+            if hasattr(self.model, 'clip_range'):
+                if callable(self.model.clip_range):
+                    # If it's a function, we need to calculate the current value
+                    # based on the remaining progress
+                    total_timesteps = self.model._total_timesteps
+                    progress_remaining = 1.0 - (self.num_timesteps / total_timesteps)
+                    current_clip_range = self.model.clip_range(progress_remaining)
+                else:
+                    # If it's a constant
+                    current_clip_range = self.model.clip_range
+                
+                # Log to console
+                print(f"Step: {self.n_calls}, Current clip range: {current_clip_range}")
+                
+                # Log to tensorboard
+                self.logger.record("train/clip_range", current_clip_range)
+                
+                # Log to wandb if available
+                if 'wandb' in sys.modules and hasattr(sys.modules['wandb'], 'log'):
+                    import wandb
+                    wandb.log({"clip_range": current_clip_range}, step=self.num_timesteps)
+        return True
+
+
 def configure_decay_rate(initial_value, schedule_type, final_value_fraction=0.1):
     """
     Configure the learning rate scheduler based on the specified type.
     
     Args:
-        initial_lr: Initial learning rate value
+        initial_value: Initial value
         schedule_type: Type of schedule ('constant', 'linear', or 'exponential')
-        final_lr_fraction: Final learning rate as a fraction of initial (for non-constant schedules)
+        final_value_fraction: Final value as a fraction of initial (for non-constant schedules)
         
     Returns:
-        A callable learning rate schedule function
+        A callable schedule function
     """
-    final_lr = initial_value * final_value_fraction
+    final_value = initial_value * final_value_fraction
     
     if schedule_type == 'constant':
-        # No decay - constant learning rate
+        # No decay - constant value
         return constant_fn(initial_value)
     
     elif schedule_type == 'linear':
-        # Linear decay from initial_lr to final_lr
-        return get_linear_fn(initial_value, final_lr, 1.0)
+        # Linear decay from initial_value to final_value
+        return get_linear_fn(initial_value, final_value, 1.0)
     
     elif schedule_type == 'exponential':
         # Custom exponential decay function
         def exponential_schedule(progress_remaining):
-            # Exponential decay from initial_lr to final_lr
+            # Exponential decay from initial_value to final_value
             # progress_remaining goes from 1.0 to 0.0
-            return final_lr + (initial_value - final_lr) * progress_remaining ** 2
+            return final_value + (initial_value - final_value) * progress_remaining ** 2
         
         return exponential_schedule
     
     else:
         # Default to constant if unrecognized schedule type
-        print(f"Warning: Unrecognized schedule type '{schedule_type}'. Using constant learning rate.")
+        print(f"Warning: Unrecognized schedule type '{schedule_type}'. Using constant value.")
         return constant_fn(initial_value)
 
 
@@ -245,7 +278,8 @@ if __name__ == "__main__":
     normalize_callback = VecNormCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
     reward_monitor_callback = RewardMonitorCallback(log_freq=args.log_freq)
     lr_monitor_callback = LearningRateMonitorCallback(log_freq=max(1, time_steps//100))  # Log LR ~100 times during training
-    callbacks = [checkpoint_callback, normalize_callback, reward_monitor_callback, lr_monitor_callback]
+    clip_range_monitor_callback = ClipRangeMonitorCallback(log_freq=max(1, time_steps//100))  # Log clip range ~100 times during training
+    callbacks = [checkpoint_callback, normalize_callback, reward_monitor_callback, lr_monitor_callback, clip_range_monitor_callback]
 
     # Optional WandB logging
     if use_wandb:
@@ -265,7 +299,7 @@ if __name__ == "__main__":
                         'reward_clip': args.reward_clip,
                         'clip_range': args.clip_range,
                         'clip_range_schedule': args.clip_range_schedule,
-                        'final_clip_range_fraction': args.final_clip_fraction,
+                        'final_clip_range_fraction': args.final_clip_range_fraction,  
                         'max_grad_norm': args.max_grad_norm,
                         'learning_rate': args.learning_rate,
                         'lr_schedule': args.lr_schedule,
@@ -283,11 +317,14 @@ if __name__ == "__main__":
         args.lr_schedule, 
         args.final_lr_fraction
     )
+    
+    # Configure clip range based on arguments
     clip_range_schedule = configure_decay_rate(
         args.clip_range, 
         args.clip_range_schedule, 
-        args.final_clip_fraction
+        args.final_clip_range_fraction
     )
+    
     print(f"Learning rate configuration:")
     print(f"  Initial rate: {args.learning_rate}")
     print(f"  Schedule: {args.lr_schedule}")
@@ -316,9 +353,9 @@ if __name__ == "__main__":
         
         model = PPO.load(args.resume, env=env)
         
-        # Note about learning rate when resuming
-        print("NOTE: When resuming, the original learning rate schedule from the checkpoint is used.")
-        print("      The learning rate arguments provided now won't affect the resumed training.")
+        # Note about learning rate and clip range when resuming
+        print("NOTE: When resuming, the original learning rate and clip range schedules from the checkpoint are used.")
+        print("      The learning rate and clip range arguments provided now won't affect the resumed training.")
         print("      This is a limitation of the current Stable Baselines 3 implementation.")
         
         model.n_steps = train_steps_batch
@@ -329,11 +366,11 @@ if __name__ == "__main__":
         model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
         train_target = model.num_timesteps + time_steps
     else:
-        # For new model, use the configured learning rate schedule
         model = PPO(args.policy, env, verbose=1, n_steps=train_steps_batch,
                     batch_size=args.batch_size, n_epochs=args.n_epochs, gae_lambda=args.gae_lambda,
                     gamma=gamma, ent_coef=args.ent_coef, tensorboard_log=None,
-                    clip_range=args.clip_range, learning_rate=lr_schedule,  # Apply the learning rate schedule
+                    clip_range=clip_range_schedule,  
+                    learning_rate=lr_schedule,  
                     max_grad_norm=args.max_grad_norm)
         model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
         train_target = time_steps
