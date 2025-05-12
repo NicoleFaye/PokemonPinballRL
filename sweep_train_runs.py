@@ -1,10 +1,12 @@
 import subprocess
 import itertools
 
+n_procs = 8
+
 # Define hyperparameter values for the sweep (lists of values to try)
 param_values_list = [{
     "n-steps":    [512],
-    "batch-size": [512*8],
+    "batch-size": [512*n_procs],
     "n-epochs":   [4],
     "gamma":      [0.997],
     "learning-rate": [.00025],
@@ -23,7 +25,7 @@ param_values_list = [{
 },
 {
     "n-steps":    [1024],
-    "batch-size": [1024*8],
+    "batch-size": [1024*n_procs],
     "n-epochs":   [4],
     "gamma":      [0.997],
     "learning-rate": [.00025],
