@@ -5,9 +5,9 @@ n_procs = 8
 
 # Define hyperparameter values for the sweep (lists of values to try)
 param_values_list = [{
-    "n-steps":    [512],
+    "n-steps":    [1024],
     "batch-size": [256],
-    "n-epochs":   [10],
+    "n-epochs":   [4],
     "gamma":      [0.99],
     "learning-rate": [.0003],
     "lr-schedule": ["constant"],
@@ -20,7 +20,26 @@ param_values_list = [{
     "info-level": [1],
     "policy":     ["MultiInputPolicy"],
     "reward-mode": ["basic"],
-    "timesteps": [25_000_000 * 2],#* n_procs],
+    "timesteps": [10_000_000 *2],
+    "seed": [0],
+},
+{
+    "n-steps":    [512],
+    "batch-size": [256],
+    "n-epochs":   [10,1],
+    "gamma":      [0.99],
+    "learning-rate": [.0003],
+    "lr-schedule": ["constant"],
+    "final-lr-fraction": [0.1],
+    "gae-lambda": [0.98],
+    "ent-coef":   [0.01],
+    "clip-range": [0.1],
+    "clip-range-schedule": ["constant"],
+    "final-clip-range-fraction": [0.1],
+    "info-level": [1],
+    "policy":     ["MultiInputPolicy"],
+    "reward-mode": ["basic"],
+    "timesteps": [10_000_000],
     "seed": [0],
 },
 {
@@ -31,7 +50,7 @@ param_values_list = [{
     "learning-rate": [.0003],
     "lr-schedule": ["constant"],
     "final-lr-fraction": [0.1],
-    "gae-lambda": [0.99],
+    "gae-lambda": [0.99,.95],
     "ent-coef":   [0.01],
     "clip-range": [0.1],
     "clip-range-schedule": ["constant"],
@@ -39,7 +58,7 @@ param_values_list = [{
     "info-level": [1],
     "policy":     ["MultiInputPolicy"],
     "reward-mode": ["basic"],
-    "timesteps": [25_000_000 * 2],# * n_procs ],
+    "timesteps": [10_000_000],
     "seed": [0],
 },
 {
@@ -58,7 +77,7 @@ param_values_list = [{
     "info-level": [1],
     "policy":     ["MultiInputPolicy"],
     "reward-mode": ["basic"],
-    "timesteps": [25_000_000 * 2],# * n_procs ],
+    "timesteps": [10_000_000],
     "seed": [0],
 }]
 
