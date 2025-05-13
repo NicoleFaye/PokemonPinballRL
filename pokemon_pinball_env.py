@@ -40,12 +40,12 @@ DEFAULT_OBSERVATION_SPACE = spaces.Box(low=0, high=255, shape=OBSERVATION_SHAPE,
 DEFAULT_CONFIG = {
     "debug": False,
     "headless": False,
-    "reward_shaping": None,
-    "info_level": 2,
+    "reward_shaping": "basic",
+    "info_level": 1,
     "frame_stack": 4,
     "frame_skip": 4,
-    "visual_mode": "game_area",  # alternative is "screen" for full RGB screen
-    "frame_stack_extra_observation": False,
+    "visual_mode": "screen",  # alternative is "screen" for full RGB screen
+    "frame_stack_extra_observation": True,
     "reduce_screen_resolution": True,  # Downsample full screen by factor of 2 when using "screen" mode
     "max_episode_frames": 0,
 }
@@ -259,7 +259,11 @@ class PokemonPinballEnv(gym.Env):
             
         # Perform the game tick
         ticks = 1 + self.frame_skip
-        self.pyboy.tick(ticks, not self.headless, False)
+        if not self.debug:
+            self.pyboy.tick(ticks, not self.headless, False)
+        else:
+            for tick in range(ticks):
+                self.pyboy.tick(1,not self.headless, False)
         self._frames_played += ticks
 
         # Get game state
