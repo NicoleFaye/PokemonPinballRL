@@ -268,7 +268,7 @@ if __name__ == "__main__":
     save_freq = max(1, time_steps // args.save_freq_divisor)
 
     # Create vectorized environments
-    env = SubprocVecEnv([make_env(i, env_config, seed=args.seed+i) for i in range(num_cpu)])
+    env = SubprocVecEnv([make_env(i, env_config, seed=args.seed) for i in range(num_cpu)])
     
     # Handle reward_clip=0 as None (no clipping)
     clip_reward_value = None if args.reward_clip == 0 else args.reward_clip
