@@ -141,13 +141,7 @@ class PokemonPinballEnv(gym.Env):
             self.recent_ball_x_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
             self.recent_ball_y_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
         
-        # Configure speed based on mode
-        if self.debug:
-            # Normal speed for debugging
-            self.pyboy.set_emulation_speed(1.0)
-        else:
-            # Maximum speed (0 = no limit)
-            self.pyboy.set_emulation_speed(0)
+        self.pyboy.set_emulation_speed(0)
             
         self.action_space = spaces.Discrete(len(Actions))
         self.observation_space = self._create_observation_space(config['info_level'])
@@ -171,6 +165,14 @@ class PokemonPinballEnv(gym.Env):
         
         # Initialize game
         self._game_wrapper.start_game()
+
+        # Configure speed based on mode
+        if self.debug:
+            # Normal speed for debugging
+            self.pyboy.set_emulation_speed(1.0)
+        else:
+            # Maximum speed (0 = no limit)
+            self.pyboy.set_emulation_speed(0)
 
     def _create_observation_space(self, info_level):
         """Create an observation space based on the info level."""
