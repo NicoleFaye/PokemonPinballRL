@@ -62,39 +62,34 @@ class RewardShaping:
                 'prev_ball_lost_during_saver': 0,
             }
             
-        # Log-scaled score difference - reduce magnitude 
         score_diff = current_fitness - previous_fitness
         if score_diff > 0:
             import numpy as np
-            score_reward = 0.5 * np.log(1 + score_diff / 100)  # Reduced multiplier from 15 to 0.5
+            score_reward = 0.5 * np.log(1 + score_diff / 100)  
         else:
             score_reward = 0
 
-        # Ball alive reward and survival bonus - reduce magnitude
-        ball_alive_reward = 0.1  # Reduced from 25
-        time_bonus = min(0.5, frames_played / 2000)  # Reduced from 120 max to 0.5 max
+        ball_alive_reward = 0.1  
+        time_bonus = min(0.5, frames_played / 2000)  
 
         additional_reward = 0
         saver_penalty = 0
         reward_sources = {}
 
-        # Catching Pokémon - reduce magnitude
         prev_caught = prev_state.get('prev_caught', 0)
         if game_wrapper.pokemon_caught_in_session > prev_caught:
-            pokemon_reward = 2.0  # Reduced from 500
+            pokemon_reward = 2.0 
             additional_reward += pokemon_reward
             reward_sources["pokemon_catch"] = pokemon_reward
-            # Note: we don't modify prev_state here, as the caller is responsible for tracking it
 
         # Evolution rewards - reduce magnitude
         prev_evolutions = prev_state.get('prev_evolutions', 0)
         if game_wrapper.evolution_success_count > prev_evolutions:
-            evolution_reward = 4.0  # Reduced from 1000
+            evolution_reward = 4.0  
             additional_reward += evolution_reward
             reward_sources["evolution"] = evolution_reward
             # State is updated by the environment
 
-        # Stage completion - reduce magnitude
         total_stages_completed = (
             game_wrapper.diglett_stages_completed +
             game_wrapper.gengar_stages_completed +
@@ -104,12 +99,10 @@ class RewardShaping:
         )
         prev_stages_completed = prev_state.get('prev_stages_completed', 0)
         if total_stages_completed > prev_stages_completed:
-            stage_reward = 5.0  # Reduced from 1500
+            stage_reward = 5.0 
             additional_reward += stage_reward
             reward_sources["stage_completion"] = stage_reward
-            # State is updated by the environment
 
-        # Ball upgrades - reduce magnitude
         ball_upgrades = (
             game_wrapper.great_ball_upgrades +
             game_wrapper.ultra_ball_upgrades +
@@ -117,10 +110,9 @@ class RewardShaping:
         )
         prev_ball_upgrades = prev_state.get('prev_ball_upgrades', 0)
         if ball_upgrades > prev_ball_upgrades:
-            upgrade_reward = 1.0  # Reduced from 200
+            upgrade_reward = 1.0  
             additional_reward += upgrade_reward
             reward_sources["ball_upgrade"] = upgrade_reward
-            # State is updated by the environment
 
         if game_wrapper.lost_ball_during_saver > prev_state.get('prev_ball_lost_during_saver', 0):
             saver_penalty = -5.0
