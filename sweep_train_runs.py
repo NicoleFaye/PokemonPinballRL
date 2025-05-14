@@ -17,9 +17,9 @@ param_values_list = [{
     "clip-range": [0.1],
     "clip-range-schedule": ["constant"],
     "final-clip-range-fraction": [0.1],
-    "info-level": [1],
     "policy":     ["MultiInputPolicy"],
-    "reward-mode": ["basic"],
+    "reward-mode": ["comprehensive","catch_focused","basic"],
+    "info-level": [1,2],
     "timesteps": [10_000_000],
     "seed": [0],
 }]
