@@ -14,6 +14,7 @@ param_values_list = [{
     "final-lr-fraction": [0.1],
     "gae-lambda": [0.98],
     "ent-coef":   [0.01],
+    "reward-clip": [10,0],
     "clip-range": [0.1],
     "clip-range-schedule": ["constant"],
     "final-clip-range-fraction": [0.1],
