@@ -1,3 +1,4 @@
+from pyboy.plugins.game_wrapper_pokemon_pinball import Stage, BallType, SpecialMode, Maps, Pokemon
 """
 Reward shaping functions for Pokemon Pinball environment.
 """
@@ -110,11 +111,11 @@ class RewardShaping:
         prev_ball_upgrades = prev_state.get('prev_ball_upgrades', 0)
         if ball_upgrades > prev_ball_upgrades:
             # Scale reward based on ball type
-            if game_wrapper.ball_type == game_wrapper.BALL_TYPE.GREAT_BALL:
+            if game_wrapper.ball_type == BallType.GREATBALL:
                 upgrade_reward = 3.0
-            elif game_wrapper.ball_type == game_wrapper.BALL_TYPE.ULTRA_BALL:
+            elif game_wrapper.ball_type == BallType.ULTRABALL:
                 upgrade_reward = 6.0
-            elif game_wrapper.ball_type == game_wrapper.BALL_TYPE.MASTER_BALL:
+            elif game_wrapper.ball_type == BallType.MASTERBALL:
                 upgrade_reward = 9.0
             else:
                 upgrade_reward = 3.0
