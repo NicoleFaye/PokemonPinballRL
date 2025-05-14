@@ -58,7 +58,8 @@ class RewardShaping:
                 'prev_caught': 0,
                 'prev_evolutions': 0, 
                 'prev_stages_completed': 0,
-                'prev_ball_upgrades': 0
+                'prev_ball_upgrades': 0,
+                'prev_ball_lost_during_saver': 0,
             }
             
         # Log-scaled score difference - reduce magnitude 
@@ -74,6 +75,7 @@ class RewardShaping:
         time_bonus = min(0.5, frames_played / 2000)  # Reduced from 120 max to 0.5 max
 
         additional_reward = 0
+        saver_penalty = 0
         reward_sources = {}
 
         # Catching Pokémon - reduce magnitude
@@ -120,8 +122,10 @@ class RewardShaping:
             reward_sources["ball_upgrade"] = upgrade_reward
             # State is updated by the environment
 
+        if game_wrapper.lost_ball_during_saver > prev_state.get('prev_ball_lost_during_saver', 0):
+            saver_penalty = -5.0
         # Combine all rewards
-        total_reward = score_reward + additional_reward + ball_alive_reward + time_bonus
+        total_reward = score_reward + additional_reward - saver_penalty  #+ ball_alive_reward + time_bonus
 
         return total_reward
     @staticmethod
