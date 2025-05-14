@@ -11,8 +11,8 @@ class RewardShaping:
     @staticmethod
     def basic(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
         """Basic reward shaping based on score difference."""
-        # Scale down raw score difference (pinball scores can be very large)
-        return (current_fitness - previous_fitness) * 0.01  # Scale by 0.01
+        # Scale down raw score difference
+        return (current_fitness - previous_fitness) * 0.01 
     
     @staticmethod
     def catch_focused(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
@@ -26,17 +26,14 @@ class RewardShaping:
             frames_played: Number of frames played
             prev_state: Dictionary containing previous state values for tracking
         """
-        # If no state is passed, create empty state (should never happen since state is managed by environment)
         if prev_state is None:
             prev_state = {'prev_caught': 0}
             
         score_reward = (current_fitness - previous_fitness) * 0.005  # Reduced from 0.5
         
-        # Big reward for catching Pokemon
         catch_reward = 0
         if game_wrapper.pokemon_caught_in_session > prev_state.get('prev_caught', 0):
-            catch_reward = 3.0  # Reduced from 1000
-            # Note: we don't modify prev_state here, as the caller is responsible for tracking it
+            catch_reward = 3.0  
             
         return score_reward + catch_reward
     
