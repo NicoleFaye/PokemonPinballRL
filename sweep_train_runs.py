@@ -22,7 +22,6 @@ param_values_list = [{
     "reward-mode": ["basic"],
     "timesteps": [10_000_000],
     "seed": [0],
-    "num-cpu" : [n_procs*2, n_procs*4],
 }]
 
 def run_training(config):
