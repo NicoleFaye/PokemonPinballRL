@@ -313,6 +313,8 @@ if __name__ == "__main__":
                         'lr_schedule': args.lr_schedule,
                         'final_lr_fraction': args.final_lr_fraction,
                         'seed': args.seed,
+                        'episode_mode': args.episode_mode,
+                        'reset_condition': args.reset_condition,
                         }
         run = wandb.init(project=args.wandb_project, id=sess_id, resume="allow",
                          name=sess_id, config=wandb_config, sync_tensorboard=True,
