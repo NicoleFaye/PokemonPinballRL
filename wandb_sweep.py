@@ -67,40 +67,50 @@ def create_sweep_config():
             # Fixed parameters (not swept)
             'timesteps': {'value': 1_000_000},  # Reduced for faster sweep iterations 
             'seed': {'value': 0},
-            'headless': {'value': 'True'},  # String because it's a flag
-            'visual-mode': {'value': 'screen'}
+            'visual-mode': {'value': 'screen'},
+            'no-wandb': {'value': True}
         }
     }
     return sweep_config
 
 def agent_entry_point(sweep_id, entity=None, project=None):
     """Function to start a sweep agent that will run the training script."""
-    # Initialize wandb
-    wandb.init(entity=entity, project=project)
+    # Initialize wandb with a longer timeout
+    wandb.init(entity=entity, project=project, settings=wandb.Settings(init_timeout=300))
     
     # Build command with the parameters from wandb config
     cmd = ["python", "train.py"]
     
     # Add all parameters from the wandb config
     for key, value in wandb.config.items():
-        if isinstance(value, bool):
+        if key == 'headless' or key == 'no-wandb':
+            # Special handling for boolean flags
             if value:
                 cmd.append(f"--{key}")
         else:
             cmd.append(f"--{key}")
             cmd.append(str(value))
     
-    # Important: Add the headless flag for server/background runs
-    if "--headless" not in cmd:
-        cmd.append("--headless")
+    # Set wandb project explicitly to avoid conflict
+    cmd.append("--wandb-project")
+    cmd.append(project or "pokemon-pinball-sweep")
+
+    cmd.append("--headless")
     
     # Execute the command
     print(f"Running: {' '.join(cmd)}")
+    
+    # Use environment variables to pass wandb run info
+    env = os.environ.copy()
+    env["WANDB_RUN_ID"] = wandb.run.id
+    env["WANDB_RESUME"] = "allow"
+    
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True
+        text=True,
+        env=env
     )
     
     # Stream the output to see progress
@@ -125,6 +135,8 @@ def main():
     if not args.sweep_id:
         sweep_config = create_sweep_config()
         sweep_id = wandb.sweep(sweep_config, project=args.project, entity=args.entity)
+        print(f"Create sweep with ID: {sweep_id}")
+        print(f"Sweep URL: https://wandb.ai/{args.entity or 'your-username'}/{args.project}/sweeps/{sweep_id}")
         print(f"Created sweep with ID: {sweep_id}")
     else:
         sweep_id = args.sweep_id
