@@ -274,11 +274,8 @@ if __name__ == "__main__":
     # Create vectorized environments
     env = SubprocVecEnv([make_env(i, env_config, seed=args.seed) for i in range(num_cpu)])
     
-    # Handle reward_clip=0 as None (no clipping)
-    clip_reward_value = None if args.reward_clip == 0 else args.reward_clip
-    
-    env = VecNormalize(env, norm_obs=False, norm_reward=True, 
-                       clip_obs=5.0, clip_reward=clip_reward_value, 
+    env = VecNormalize(env, norm_obs=False, norm_reward=args.reward_clip > 0, 
+                       clip_obs=5.0, clip_reward=args.reward_clip, 
                        gamma=gamma, epsilon=1e-8)
 
     # Setup callbacks
