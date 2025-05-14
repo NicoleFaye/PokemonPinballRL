@@ -207,6 +207,8 @@ if __name__ == "__main__":
     parser.add_argument('--final-lr-fraction', type=float, default=0.1,help='Final learning rate as a fraction of initial rate (default: 0.1, 10% of initial rate)')
     parser.add_argument('--final-clip-range-fraction', type=float, default=0.1,help='Final clip value as a fraction of initial rate (default: 0.1, 10% of initial value)')
     # Environment configuration
+    parser.add_argument('--episode-mode', type=str, default='life', choices=['ball','life','game'], help='Episode mode (ball, life, or game)')
+    parser.add_argument('--reset-condition', type=str, default='game', choices=['ball','life','game'], help='Reset condition (ball, life, or game)')
     parser.add_argument('--seed', type=int, default=0, help='Random seed for environment')
     parser.add_argument('--reward-mode', type=str, default='basic', choices=['basic', 'catch_focused', 'comprehensive','progressive'], help='Reward shaping mode')
     parser.add_argument('--frame-stack', type=int, default=4, help='Number of frames to stack')
@@ -248,6 +250,8 @@ if __name__ == "__main__":
         'frame_stack_extra_observation': args.frame_stack_extra_observation,
         'reduce_screen_resolution': args.reduce_screen_resolution,
         'max_episode_frames': args.max_episode_frames,
+        'episode_mode': args.episode_mode,
+        'reset_condition': args.reset_condition,
     }
 
     from datetime import datetime

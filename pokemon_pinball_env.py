@@ -66,11 +66,8 @@ class PokemonPinballEnv(gym.Env):
         Initialize the Pokemon Pinball environment.
         
         Args:
-            pyboy: PyBoy instance
-            debug: Enable debug mode with normal speed for visualization
-            headless: Run without visualization at maximum speed
-            reward_shaping: Optional custom reward shaping function
-            info_level: Level of detail in info dict (0-3, higher=more info but slower)
+            rom_path: Path to the Pokemon Pinball ROM file
+            config: Configuration dictionary with various settings
         """
         super().__init__()
         
@@ -114,8 +111,14 @@ class PokemonPinballEnv(gym.Env):
 
         self.max_episode_frames = config.get('max_episode_frames', 0)
 
+        # Episode mode and reset condition configuration
         self.episode_mode = config.get('episode_mode', 'life')  # life, ball, or game
-        self.reset_condition= config.get('reset_condition', 'game')  # life, ball, or game
+        self.reset_condition = config.get('reset_condition', 'game')  # life, ball, or game
+        
+        # Variables for tracking game state between episodes
+        self._previous_balls_left = 3  # Default starting balls
+        self._initialized = False  # Flag to track if environment has been initialized
+        self._first_reset = False  # Flag to track first reset
         
         # Stuck detection parameters (always enabled)
         self.stuck_detection_window = max(50, self.frame_stack * 5)  # At least 5x the frame stack
@@ -215,7 +218,6 @@ class PokemonPinballEnv(gym.Env):
         
         if info_level >= 2:
             # Level 2 - Additional game state
-
             observations_dict.update({
                 'current_stage': spaces.Discrete(len(STAGE_ENUMS)),
                 'ball_type': spaces.Discrete(len(BALL_TYPE_ENUMS)),
@@ -231,6 +233,19 @@ class PokemonPinballEnv(gym.Env):
             })
         
         return spaces.Dict(observations_dict)
+    
+    @property
+    def ball_lost(self):
+        """
+        Determines if a ball was just lost based on current and previous state.
+        This is different from lost_ball_during_saver, which only handles the saver case.
+        """
+        # Check if the ball count has decreased
+        balls_decreased = (self._game_wrapper.balls_left < self._previous_balls_left)
+        # Or if the game explicitly marked a ball as lost
+        explicit_loss = getattr(self._game_wrapper, "lost_ball", False)
+        
+        return balls_decreased or explicit_loss or self._game_wrapper.lost_ball_during_saver
         
     def step(self, action):
         """
@@ -243,6 +258,9 @@ class PokemonPinballEnv(gym.Env):
             Tuple of (observation, reward, done, truncated, info)
         """
         assert self.action_space.contains(action), f"{action} ({type(action)}) invalid"
+        
+        # Save current state before taking action
+        self._previous_balls_left = self._game_wrapper.balls_left
         
         action_release_delay = math.ceil((1 + self.frame_skip) / 2)
 
@@ -270,18 +288,28 @@ class PokemonPinballEnv(gym.Env):
             self.pyboy.tick(ticks, not self.headless, False)
         else:
             for tick in range(ticks):
-                self.pyboy.tick(1,not self.headless, False)
+                self.pyboy.tick(1, not self.headless, False)
         self._frames_played += ticks
 
         # Get game state
         self._calculate_fitness()
         
-
+        # Check if max frames reached
         max_frame_reached = self.max_episode_frames > 0 and self._frames_played >= self.max_episode_frames
 
-        # Determine if game is over
-        #done = self._game_wrapper.game_over
-        done = self._game_wrapper.lost_ball_during_saver or self._game_wrapper.game_over or self._game_wrapper.balls_left<2 or max_frame_reached
+        # Determine if episode is done based on episode_mode
+        if self.episode_mode == "life":
+            # Episode ends when a single life is lost (immediate loss, not after saver)
+            done = self._game_wrapper.lost_ball_during_saver or max_frame_reached
+        elif self.episode_mode == "ball":
+            # Episode ends when a ball is completely lost (including after saver)
+            done = self.ball_lost or max_frame_reached
+        elif self.episode_mode == "game":
+            # Episode ends when the game is over (all balls used)
+            done = self._game_wrapper.game_over or max_frame_reached
+        else:
+            # Default behavior from original code
+            done = self._game_wrapper.lost_ball_during_saver or self._game_wrapper.game_over or self._game_wrapper.balls_left < 2 or max_frame_reached
         
         # Apply reward shaping by calling the reward function
         # but passing self for tracking state
@@ -320,13 +348,12 @@ class PokemonPinballEnv(gym.Env):
         # Add stuck status to info if applicable
         if truncated:
             info['truncated_reason'] = ['stuck_ball']
-            self.reset()
-        
+            
         return observation, reward, done, truncated, info
         
     def reset(self, seed=None, options=None):
         """
-        Reset the environment.
+        Reset the environment based on the reset_condition.
         
         Args:
             seed: Random seed
@@ -337,27 +364,56 @@ class PokemonPinballEnv(gym.Env):
         """
         super().reset(seed=seed)
         
-        # Reset reward tracking variables (instance variables)
+        # Reset reward tracking variables
         self._prev_caught = 0
         self._prev_evolutions = 0
         self._prev_stages_completed = 0
         self._prev_ball_upgrades = 0
         
         game_wrapper = self._game_wrapper
-        game_wrapper.reset_game()
-        # this method currently is not in the official pyboy API, but there is a pull request to add it
-        game_wrapper.reset_tracking()
+        
+        # Mark the environment as initialized
+        self._initialized = True
+        
+        # Implement reset condition logic
+        if self.reset_condition == "life":
+            # For "life" mode, we continue with the current ball after a life is lost
+            # Only do a full reset if the game is over or it's the first reset
+            if not self._first_reset or game_wrapper.game_over:
+                game_wrapper.reset_game()
+                game_wrapper.reset_tracking()
+                self._first_reset = True
+            # Otherwise, just continue with the current ball
+        elif self.reset_condition == "ball":
+            # For "ball" mode, we start a new ball (or game) after a ball is lost
+            # Only do a full reset if the game is over or it's the first reset
+            if not self._first_reset or game_wrapper.game_over:
+                game_wrapper.reset_game()
+                game_wrapper.reset_tracking()
+                self._first_reset = True
+            # Otherwise continue with new ball if one was lost
+            elif self.ball_lost:
+                # No explicit action needed - the game will automatically serve a new ball
+                pass
+        elif self.reset_condition == "game":
+            # For "game" mode, we always do a full game reset
+            game_wrapper.reset_game()
+            game_wrapper.reset_tracking()
+        else:
+            # Default behavior - full reset
+            game_wrapper.reset_game()
+            game_wrapper.reset_tracking()
         
         # Reset fitness tracking
         self._fitness = 0
         self._previous_fitness = 0
-        self._frames_played = 0  # Reset frame counter
+        self._frames_played = 0
         
         # Reset stuck detection
         self.ball_position_history = []
         self.last_score = 0
         
-        # Clear frame buffer to ensure fresh initialization
+        # Clear frame buffer
         buffer_key = f"{self.visual_mode}_buffer"
         if hasattr(self, buffer_key):
             delattr(self, buffer_key)
@@ -373,7 +429,10 @@ class PokemonPinballEnv(gym.Env):
         self.episodes_completed += 1
         self._episode_count += 1
 
-        # Get observation and info once
+        # Reset ball tracking to current state
+        self._previous_balls_left = game_wrapper.balls_left
+
+        # Get observation and info
         observation = self._get_obs()
         info = self._get_info()
         
@@ -458,6 +517,13 @@ class PokemonPinballEnv(gym.Env):
             'ball_y': [float(game_wrapper.ball_y)],
             'ball_x_velocity': [float(game_wrapper.ball_x_velocity)],
             'ball_y_velocity': [float(game_wrapper.ball_y_velocity)]
+        })
+        
+        # Add info about episode and reset modes
+        info.update({
+            'episode_mode': [self.episode_mode],
+            'reset_condition': [self.reset_condition],
+            'balls_left': [float(game_wrapper.balls_left)]
         })
         
         return info
