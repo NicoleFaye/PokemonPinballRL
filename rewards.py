@@ -43,7 +43,7 @@ class RewardShaping:
     @staticmethod
     def comprehensive(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
         """
-        Comprehensive reward that promotes long survival and steady progress.
+        Improved comprehensive reward function with better reward scaling.
         
         Args:
             current_fitness: Current score
@@ -52,7 +52,7 @@ class RewardShaping:
             frames_played: Number of frames played
             prev_state: Dictionary containing previous state values for tracking
         """
-        # If no state is passed, create empty state (should never happen since state is managed by environment)
+        # If no state is passed, create empty state
         if prev_state is None:
             prev_state = {
                 'prev_caught': 0,
@@ -62,34 +62,35 @@ class RewardShaping:
                 'prev_ball_lost_during_saver': 0,
             }
             
+        # Base score reward - logarithmic scaling to prevent score domination
         score_diff = current_fitness - previous_fitness
         if score_diff > 0:
             import numpy as np
-            score_reward = 0.5 * np.log(1 + score_diff / 100)  
+            # More significant log scaling to better normalize large score jumps
+            score_reward = 0.3 * np.log(1 + score_diff / 50)
         else:
             score_reward = 0
 
-        ball_alive_reward = 0.1  
-        time_bonus = min(0.5, frames_played / 2000)  
-
+        # Initialize additional rewards
         additional_reward = 0
         saver_penalty = 0
-        reward_sources = {}
+        reward_components = {}
 
+        # Pokemon catch reward - fundamental goal
         prev_caught = prev_state.get('prev_caught', 0)
         if game_wrapper.pokemon_caught_in_session > prev_caught:
-            pokemon_reward = 2.0 
+            pokemon_reward = 5.0  # Increased to emphasize catching importance
             additional_reward += pokemon_reward
-            reward_sources["pokemon_catch"] = pokemon_reward
+            reward_components["pokemon_catch"] = pokemon_reward
 
-        # Evolution rewards - reduce magnitude
+        # Evolution rewards - rare achievement deserves high reward
         prev_evolutions = prev_state.get('prev_evolutions', 0)
         if game_wrapper.evolution_success_count > prev_evolutions:
-            evolution_reward = 4.0  
+            evolution_reward = 10.0  # Higher reward as evolutions are major achievements
             additional_reward += evolution_reward
-            reward_sources["evolution"] = evolution_reward
-            # State is updated by the environment
+            reward_components["evolution"] = evolution_reward
 
+        # Stage completion rewards - moderately difficult achievements
         total_stages_completed = (
             game_wrapper.diglett_stages_completed +
             game_wrapper.gengar_stages_completed +
@@ -99,10 +100,11 @@ class RewardShaping:
         )
         prev_stages_completed = prev_state.get('prev_stages_completed', 0)
         if total_stages_completed > prev_stages_completed:
-            stage_reward = 5.0 
+            stage_reward = 8.0  # Higher reward for stage completion
             additional_reward += stage_reward
-            reward_sources["stage_completion"] = stage_reward
+            reward_components["stage_completion"] = stage_reward
 
+        # Ball upgrade rewards - stepping stones to better performance
         ball_upgrades = (
             game_wrapper.great_ball_upgrades +
             game_wrapper.ultra_ball_upgrades +
@@ -110,16 +112,35 @@ class RewardShaping:
         )
         prev_ball_upgrades = prev_state.get('prev_ball_upgrades', 0)
         if ball_upgrades > prev_ball_upgrades:
-            upgrade_reward = 1.0  
+            # Scale reward based on ball type
+            if game_wrapper.ball_type == game_wrapper.BALL_TYPE.GREAT_BALL:
+                upgrade_reward = 3.0
+            elif game_wrapper.ball_type == game_wrapper.BALL_TYPE.ULTRA_BALL:
+                upgrade_reward = 6.0
+            elif game_wrapper.ball_type == game_wrapper.BALL_TYPE.MASTER_BALL:
+                upgrade_reward = 9.0
+            else:
+                upgrade_reward = 3.0
+            
             additional_reward += upgrade_reward
-            reward_sources["ball_upgrade"] = upgrade_reward
+            reward_components["ball_upgrade"] = upgrade_reward
 
+        # Penalty for losing ball - teaches ball preservation
         if game_wrapper.lost_ball_during_saver > prev_state.get('prev_ball_lost_during_saver', 0):
-            saver_penalty = -5.0
-        # Combine all rewards
-        total_reward = score_reward + additional_reward - saver_penalty  #+ ball_alive_reward + time_bonus
+            saver_penalty = -3.0  # Reduced from -5.0 to not overly discourage risk-taking
+
+        # Special mode activation bonus (if active compared to previous)
+        if game_wrapper.special_mode_active and not prev_state.get('prev_special_mode_active', False):
+            special_mode_reward = 2.0
+            additional_reward += special_mode_reward
+            reward_components["special_mode_active"] = special_mode_reward
+        
+        # Combine all rewards with appropriate balancing
+        total_reward = score_reward + additional_reward + saver_penalty
 
         return total_reward
+
+
     @staticmethod
     def progressive(current_fitness, previous_fitness, game_wrapper, frames_played=0, prev_state=None):
         """
