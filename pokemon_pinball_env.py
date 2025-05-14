@@ -47,7 +47,9 @@ DEFAULT_CONFIG = {
     "visual_mode": "screen",  # alternative is "screen" for full RGB screen
     "frame_stack_extra_observation": True,
     "reduce_screen_resolution": True,  # Downsample full screen by factor of 2 when using "screen" mode
-    "max_episode_frames": 0,
+    "max_episode_frames": 0, # 0 means no limit
+    "episode_mode":"life", # life, ball, or game
+    "reset_condition":"game", # life, ball, or game
 }
 
 
@@ -111,6 +113,9 @@ class PokemonPinballEnv(gym.Env):
         self.reduce_screen_resolution = config.get('reduce_screen_resolution', True)
 
         self.max_episode_frames = config.get('max_episode_frames', 0)
+
+        self.episode_mode = config.get('episode_mode', 'life')  # life, ball, or game
+        self.reset_condition= config.get('reset_condition', 'game')  # life, ball, or game
         
         # Stuck detection parameters (always enabled)
         self.stuck_detection_window = max(50, self.frame_stack * 5)  # At least 5x the frame stack
@@ -604,7 +609,8 @@ class PokemonPinballEnv(gym.Env):
             'prev_caught': self._prev_caught,
             'prev_evolutions': self._prev_evolutions,
             'prev_stages_completed': self._prev_stages_completed,
-            'prev_ball_upgrades': self._prev_ball_upgrades
+            'prev_ball_upgrades': self._prev_ball_upgrades,
+            'prev_ball_lost_during_saver': self._game_wrapper.lost_ball_during_saver,
         }
         
         # Call the appropriate reward function with instance state
