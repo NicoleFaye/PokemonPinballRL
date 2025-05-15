@@ -133,16 +133,16 @@ if __name__ == "__main__":
     parser.add_argument('--ent-coef', '--ent_coef', type=float, default=0.01, help='Entropy coefficient')
     parser.add_argument('--gae-lambda', '--gae_lambda', type=float, default=0.95, help='GAE lambda for advantage estimation')
     parser.add_argument('--learning-rate', '--learning_rate', type=float, default=2.5e-4, help='Initial learning rate')
-    parser.add_argument('--lr-schedule', type=str, default='constant', choices=['constant', 'linear', 'exponential'], help='Learning rate schedule')
-    parser.add_argument('--clip-range', type=float, default=0.2, help='PPO clip range')
+    parser.add_argument('--lr-schedule','--learning_rate_schedule', type=str, default='constant', choices=['constant', 'linear', 'exponential'], help='Learning rate schedule')
+    parser.add_argument('--clip-range','--clip_range', type=float, default=0.2, help='PPO clip range')
     parser.add_argument('--clip-range-schedule', type=str, default='constant', choices=['constant', 'linear', 'exponential'], help='Clip range schedule')
     parser.add_argument('--final-lr-fraction', type=float, default=0.1, help='Final learning rate fraction')
     parser.add_argument('--final-clip-range-fraction', type=float, default=0.1, help='Final clip range fraction')
     parser.add_argument('--policy', type=str, default='MultiInputPolicy', help='PPO policy')
-    parser.add_argument('--max-grad-norm', type=float, default=0.5, help='Max gradient norm for clipping')
-    parser.add_argument('--target-kl', type=float, default=None, help='Target KL divergence for early stopping')
+    parser.add_argument('--max-grad-norm','--max_grad_norm', type=float, default=0.5, help='Max gradient norm for clipping')
+    parser.add_argument('--target-kl','--target_kl', type=float, default=None, help='Target KL divergence for early stopping')
     parser.add_argument('--vf-coef', '--vf_coef', type=float, default=0.5, help='Value function coefficient')
-    parser.add_argument('--normalize-advantage', type=bool, default=True, help='Normalize advantage estimates')
+    parser.add_argument('--normalize-advantage','--normalize_advantage', type=bool, default=True, help='Normalize advantage estimates')
 
     # Environment configuration
     parser.add_argument('--episode-mode', type=str, default='life', choices=['ball','life','game'], help='Episode mode')
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     parser.add_argument('--max-episode-frames', type=int, default=0, help='Max frames per episode')
     parser.add_argument('--no-frame-stack-extra-observation', dest='frame_stack_extra_observation', action='store_false', help='Disable extra obs')
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable screen downsample')
-    parser.add_argument('--reward-clip', type=float, default=3.0, help='Reward clipping value')
+    parser.add_argument('--reward-clip','--reward_clip', type=float, default=3.0, help='Reward clipping value')
     # Parallel environments
     parser.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=8, help='Number of parallel environments')
     # Logging and runtime
