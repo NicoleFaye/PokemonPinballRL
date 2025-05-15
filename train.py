@@ -207,9 +207,8 @@ if __name__ == "__main__":
     save_freq = max(1, time_steps // args.save_freq_divisor)
 
     env = SubprocVecEnv([make_env(i, env_config, seed=args.seed) for i in range(num_cpu)])
-    clip_reward_value = None if args.reward_clip == 0 else args.reward_clip
-    env = VecNormalize(env, norm_obs=False, norm_reward=True,
-                       clip_obs=5.0, clip_reward=clip_reward_value,
+    env = VecNormalize(env, norm_obs=False, norm_reward=args.reward_clip > 0,
+                       clip_obs=5.0, clip_reward=args.reward_clip,
                        gamma=gamma, epsilon=1e-8)
 
     checkpoint_callback = CheckpointCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
