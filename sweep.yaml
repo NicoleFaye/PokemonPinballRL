@@ -13,16 +13,28 @@ parameters:
     values: [1, 4, 10]
   learning_rate:
     values: [0.0003, 0.00003, 0.003]
+  learning_rate_schedule:
+    values: ["constant"]
+  gamma:
+    values: [0.99, .995, .997, 0.999]
   ent_coef:
     values: [0.01]
+  vf_coef:
+    values: [0.1, 0.2, 0.5]
   gae_lambda:
-    values: [0.95, 0.975, 0.99]
+    values: [0.95, 0.96, 0.98]
+  clip_range:
+    values: [0.2, 0.1]
+  max_grad_norm:
+    values: [0.5, 1.0, 2.0]
   info_level:
-    values: [1, 2]
+    values: [1, 2, 3]
+  reward_clip:
+    values: [0.0, 1.0, 3.0, 5.0, 10.0]
   reward_mode:
-    values: ["basic", "catch_focused", "comprehensive"]
+    values: ["comprehensive"]
   timesteps:
-    value: 5000000
+    value: 2500000
 program: train.py
 command:
   - python

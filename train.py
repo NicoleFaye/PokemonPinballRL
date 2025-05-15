@@ -140,6 +140,9 @@ if __name__ == "__main__":
     parser.add_argument('--final-clip-range-fraction', type=float, default=0.1, help='Final clip range fraction')
     parser.add_argument('--policy', type=str, default='MultiInputPolicy', help='PPO policy')
     parser.add_argument('--max-grad-norm', type=float, default=0.5, help='Max gradient norm for clipping')
+    parser.add_argument('--target-kl', type=float, default=None, help='Target KL divergence for early stopping')
+    parser.add_argument('--vf-coef', '--vf_coef', type=float, default=0.5, help='Value function coefficient')
+    parser.add_argument('--normalize-advantage', type=bool, default=True, help='Normalize advantage estimates')
 
     # Environment configuration
     parser.add_argument('--episode-mode', type=str, default='life', choices=['ball','life','game'], help='Episode mode')
@@ -167,7 +170,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Assign parameters
-    time_steps = 5_000_000 if args.timesteps == 10_000_000 else args.timesteps
+    time_steps = args.timesteps
     train_steps_batch = args.n_steps
     gamma = args.gamma
     use_wandb = not args.no_wandb
@@ -234,8 +237,14 @@ if __name__ == "__main__":
                         'lr_schedule': args.lr_schedule,
                         'final_lr_fraction': args.final_lr_fraction,
                         'seed': args.seed,
-                        'episode_mode': args.episode_mode,
-                        'reset_condition': args.reset_condition,
+                        'target_kl': args.target_kl,
+                        'clip_range': args.clip_range,
+                        'clip_range_schedule': args.clip_range_schedule,
+                        'final_clip_range_fraction': args.final_clip_range_fraction,
+                        'reward_clip': args.reward_clip,
+                        'vf_coef': args.vf_coef,
+                        'max_grad_norm': args.max_grad_norm,
+                        'normalize_advantage': args.normalize_advantage,
                         }
         run = wandb.init(project=args.wandb_project, id=sess_id, resume="allow",
                          name=sess_id, config=wandb_config, sync_tensorboard=True,
@@ -302,7 +311,10 @@ if __name__ == "__main__":
                     gamma=gamma, ent_coef=args.ent_coef, tensorboard_log=None,
                     clip_range=clip_range_schedule,  
                     learning_rate=lr_schedule,  
-                    max_grad_norm=args.max_grad_norm)
+                    max_grad_norm=args.max_grad_norm,
+                    target_kl=args.target_kl,
+                    vf_coef=args.vf_coef,
+                    normalize_advantage=args.normalize_advantage,)
         model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
         train_target = time_steps
 
