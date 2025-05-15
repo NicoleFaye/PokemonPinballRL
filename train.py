@@ -138,6 +138,9 @@ if __name__ == "__main__":
     parser.add_argument('--clip-range-schedule', type=str, default='constant', choices=['constant', 'linear', 'exponential'], help='Clip range schedule')
     parser.add_argument('--final-lr-fraction', type=float, default=0.1, help='Final learning rate fraction')
     parser.add_argument('--final-clip-range-fraction', type=float, default=0.1, help='Final clip range fraction')
+    parser.add_argument('--policy', type=str, default='MultiInputPolicy', help='PPO policy')
+    parser.add_argument('--max-grad-norm', type=float, default=0.5, help='Max gradient norm for clipping')
+
     # Environment configuration
     parser.add_argument('--episode-mode', type=str, default='life', choices=['ball','life','game'], help='Episode mode')
     parser.add_argument('--reset-condition', type=str, default='game', choices=['ball','life','game'], help='Reset condition')
