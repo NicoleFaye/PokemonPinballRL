@@ -1,6 +1,10 @@
 from pyboy import PyBoy
 import keyboard
-boy = PyBoy(rom_path='./roms/pokemon_pinball.gbc', window='sdl2', sound_emulated=False)
+import signal # Aggressively exit on ctrl+c
+from os import _exit
+signal.signal(signal.SIGINT, lambda sig, frame: _exit(0))
+
+boy = PyBoy('./roms/pokemon_pinball.gbc', window='SDL2', sound_emulated=False)
 boy.set_emulation_speed(0)
 boy.game_wrapper.start_game()
 boy.set_emulation_speed(1)
