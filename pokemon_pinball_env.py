@@ -116,7 +116,7 @@ class PokemonPinballEnv(gym.Env):
         self.reset_condition = config.get('reset_condition', 'game')  # life, ball, or game
         
         # Variables for tracking game state between episodes
-        self._previous_balls_left = 3  # Default starting balls
+        self._previous_balls_left = 2  # Default starting balls
         self._previous_balls_lost_during_saver = 0 
         self._initialized = False  
         
