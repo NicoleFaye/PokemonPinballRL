@@ -119,7 +119,6 @@ class PokemonPinballEnv(gym.Env):
         self._previous_balls_left = 3  # Default starting balls
         self._previous_balls_lost_during_saver = 0 
         self._initialized = False  # Flag to track if environment has been initialized
-        self._first_reset = False  # Flag to track first reset
         
         # Stuck detection parameters (always enabled)
         self.stuck_detection_window = max(50, self.frame_stack * 5)  # At least 5x the frame stack
