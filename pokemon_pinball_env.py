@@ -117,6 +117,7 @@ class PokemonPinballEnv(gym.Env):
         
         # Variables for tracking game state between episodes
         self._previous_balls_left = 3  # Default starting balls
+        self._previous_balls_lost_during_saver = 0 
         self._initialized = False  # Flag to track if environment has been initialized
         self._first_reset = False  # Flag to track first reset
         
@@ -238,15 +239,18 @@ class PokemonPinballEnv(gym.Env):
     def ball_lost(self):
         """
         Determines if a ball was just lost based on current and previous state.
-        This is different from lost_ball_during_saver, which only handles the saver case.
+        This is different from life_lost because it includes balls lost during saver
         """
-        # Check if the ball count has decreased
-        balls_decreased = (self._game_wrapper.balls_left < self._previous_balls_left)
-        # Or if the game explicitly marked a ball as lost
-        explicit_loss = getattr(self._game_wrapper, "lost_ball", False)
+        lives_decreased = (self._game_wrapper.balls_left < self._previous_balls_left)
+        balls_lost_during_saver_increased = (self._game_wrapper.lost_ball_during_saver > self._previous_balls_lost_during_saver)
         
-        return balls_decreased or explicit_loss or self._game_wrapper.lost_ball_during_saver
-        
+        return lives_decreased or balls_lost_during_saver_increased
+
+    @property
+    def life_lost(self):
+        lives_decreased = (self._game_wrapper.balls_left < self._previous_balls_left)
+        return lives_decreased
+
     def step(self, action):
         """
         Take a step in the environment.
@@ -374,35 +378,21 @@ class PokemonPinballEnv(gym.Env):
         
         # Mark the environment as initialized
         self._initialized = True
+        game_wrapper.reset_tracking()
         
         # Implement reset condition logic
         if self.reset_condition == "life":
             # For "life" mode, we continue with the current ball after a life is lost
-            # Only do a full reset if the game is over or it's the first reset
-            if not self._first_reset or game_wrapper.game_over:
+            if game_wrapper.game_over or self.life_lost:
                 game_wrapper.reset_game()
-                game_wrapper.reset_tracking()
-                self._first_reset = True
             # Otherwise, just continue with the current ball
         elif self.reset_condition == "ball":
             # For "ball" mode, we start a new ball (or game) after a ball is lost
-            # Only do a full reset if the game is over or it's the first reset
-            if not self._first_reset or game_wrapper.game_over:
+            if game_wrapper.game_over or self.ball_lost:
                 game_wrapper.reset_game()
-                game_wrapper.reset_tracking()
-                self._first_reset = True
-            # Otherwise continue with new ball if one was lost
-            elif self.ball_lost:
-                # No explicit action needed - the game will automatically serve a new ball
-                pass
         elif self.reset_condition == "game":
-            # For "game" mode, we always do a full game reset
-            game_wrapper.reset_game()
-            game_wrapper.reset_tracking()
-        else:
-            # Default behavior - full reset
-            game_wrapper.reset_game()
-            game_wrapper.reset_tracking()
+            if game_wrapper.game_over:
+                game_wrapper.reset_game()
         
         # Reset fitness tracking
         self._fitness = 0
@@ -431,6 +421,7 @@ class PokemonPinballEnv(gym.Env):
 
         # Reset ball tracking to current state
         self._previous_balls_left = game_wrapper.balls_left
+        self._previous_balls_lost_during_saver = game_wrapper.lost_ball_during_saver
 
         # Get observation and info
         observation = self._get_obs()
