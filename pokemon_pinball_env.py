@@ -118,11 +118,11 @@ class PokemonPinballEnv(gym.Env):
         # Variables for tracking game state between episodes
         self._previous_balls_left = 3  # Default starting balls
         self._previous_balls_lost_during_saver = 0 
-        self._initialized = False  # Flag to track if environment has been initialized
+        self._initialized = False  
         
-        # Stuck detection parameters (always enabled)
+        # Stuck detection parameters 
         self.stuck_detection_window = max(50, self.frame_stack * 5)  # At least 5x the frame stack
-        self.stuck_detection_threshold = 5.0  # Movement threshold in pixels
+        self.stuck_detection_threshold = 5.0  
         self.stuck_detection_reward_threshold = 100  # Min score change to avoid being "stuck"
         
         # Buffer for tracking ball positions
@@ -174,7 +174,6 @@ class PokemonPinballEnv(gym.Env):
         # Initialize game
         self._game_wrapper.start_game()
 
-        # Configure speed based on mode
         if self.debug:
             # Normal speed for debugging
             self.pyboy.set_emulation_speed(1.0)
@@ -321,13 +320,11 @@ class PokemonPinballEnv(gym.Env):
         else:
             reward = self._fitness - self._previous_fitness
             
-        # Get observation
         observation = self._get_obs()
         
-        # Check for stuck ball (if enabled)
+        # Check for stuck ball
         truncated = self._check_if_stuck(observation)
         
-        # Get info with appropriate level of detail
         info = self._get_info()
         
         # Add episode completion flag when episode ends
@@ -536,7 +533,6 @@ class PokemonPinballEnv(gym.Env):
             # Convert to grayscale using simple mean across channels
             screen_img = np.mean(screen_img, axis=2, keepdims=False).astype(np.uint8)
             
-            # Downsample if needed
             if self.reduce_screen_resolution:
                 screen_img = screen_img[::2, ::2]
             
