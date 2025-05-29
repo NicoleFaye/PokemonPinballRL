@@ -128,7 +128,7 @@ if __name__ == "__main__":
     parser.add_argument('--timesteps', type=int, default=10_000_000, help='Total timesteps to train for')
     parser.add_argument('--n-steps', '--n_steps', type=int, default=2048, help='Number of steps per update (n_steps)')
     parser.add_argument('--batch-size', '--batch_size', type=int, default=512, help='Mini-batch size for PPO')
-    parser.add_argument('--n-epochs', '--n_epochs', type=int, default=1, help='Number of epochs per update')
+    parser.add_argument('--n-epochs', '--n_epochs', type=int, default=10, help='Number of epochs per update')
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor')
     parser.add_argument('--ent-coef', '--ent_coef', type=float, default=0.01, help='Entropy coefficient')
     parser.add_argument('--gae-lambda', '--gae_lambda', type=float, default=0.95, help='GAE lambda for advantage estimation')

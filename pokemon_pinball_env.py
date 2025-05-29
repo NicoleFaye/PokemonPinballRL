@@ -628,10 +628,10 @@ class PokemonPinballEnv(gym.Env):
                 "special_mode": np.array([special_mode], dtype=np.int32),
                 "special_mode_active": np.array([special_mode_active], dtype=np.int32),
             })
-            
-        # Convert boolean to int array for tensor compatibility
-        saver_active = 1 if (game_wrapper.ball_saver_seconds_left > 0) else 0
-        observation["saver_active"] = np.array([saver_active], dtype=np.int32)
+                
+            # Convert boolean to int array for tensor compatibility
+            saver_active = 1 if (game_wrapper.ball_saver_seconds_left > 0) else 0
+            observation["saver_active"] = np.array([saver_active], dtype=np.int32)
             
         # Level 3 - Most detailed information
         if self.info_level >= 3:
