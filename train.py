@@ -158,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable screen downsample')
     parser.add_argument('--reward-clip','--reward_clip', type=float, default=3.0, help='Reward clipping value')
     # Parallel environments
-    parser.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=8, help='Number of parallel environments')
+    parser.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=24, help='Number of parallel environments')
     # Logging and runtime
     parser.add_argument('--headless', action='store_true', help='Run without rendering')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
