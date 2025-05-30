@@ -5,6 +5,7 @@ gymnasium>=0.28.1
 pyboy>=1.4.4
 pufferlib>=2.0.0
 matplotlib>=3.5.0
+stable-baselines3[extra]
 
 # Optional packages
 wandb>=0.13.0
