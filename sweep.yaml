@@ -44,3 +44,4 @@ command:
   - train.py
   - --headless
   - ${args}
+  - --disable-nnpack

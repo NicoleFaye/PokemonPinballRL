@@ -11,6 +11,7 @@ from stable_baselines3.common.utils import get_linear_fn, get_schedule_fn, const
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList, BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
+import torch 
 from pokemon_pinball_env import PokemonPinballEnv
 
 class VecNormCallback(BaseCallback):
@@ -167,7 +168,12 @@ if __name__ == "__main__":
     parser.add_argument('--resume', type=str, help='Path to checkpoint to resume from (.zip)')
     parser.add_argument('--save-freq-divisor', type=int, default=200, help='Divisor for checkpoint save frequency')
     parser.add_argument('--log-freq', type=int, default=100, help='Frequency for logging reward stats')
+    parser.add_argument('--disable-nnpack', action='store_true', help='Disable NNPACK for performance')
     args = parser.parse_args()
+
+
+    if args.disable_nnpack:
+        torch.backends.nnpack.enabled = False  # Disable nnpack 
 
     # Assign parameters
     time_steps = args.timesteps
