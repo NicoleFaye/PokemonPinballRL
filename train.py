@@ -1,9 +1,10 @@
-
 import sys
 import argparse
 from os.path import exists
 from os import _exit, makedirs
 from pathlib import Path
+import os
+import psutil
 import suppress_warnings  # Import the warning suppression module first
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
@@ -107,20 +108,80 @@ def configure_decay_rate(initial_value, schedule_type, final_value_fraction=0.1)
         return get_linear_fn(initial_value, final_value, 1.0)
     elif schedule_type == 'exponential':
         def exponential_schedule(progress_remaining):
-            return final_value + (initial_value - final_value) * progress_remaining ** 2
+            return final_value + (initial_value - initial_value) * progress_remaining ** 2
         return exponential_schedule
     else:
         print(f"Warning: Unrecognized schedule type '{schedule_type}'. Using constant value.")
         return constant_fn(initial_value)
 
-def make_env(rank, env_conf, seed=0):
+def get_available_cores():
+    """Get list of available CPU cores, respecting CPU affinity if set"""
+    try:
+        # Get the current process's CPU affinity
+        current_process = psutil.Process()
+        available_cores = list(current_process.cpu_affinity())
+        return available_cores
+    except (AttributeError, OSError):
+        # Fallback to all cores if affinity can't be determined
+        return list(range(os.cpu_count()))
+
+def set_process_affinity(cpu_core):
+    """Set CPU affinity for the current process"""
+    try:
+        import psutil
+        current_process = psutil.Process()
+        current_process.cpu_affinity([cpu_core])
+        print(f"Process {os.getpid()} pinned to CPU core {cpu_core}")
+    except (ImportError, AttributeError, OSError) as e:
+        print(f"Warning: Could not set CPU affinity for process {os.getpid()}: {e}")
+
+def make_env(rank, env_conf, seed=0, cpu_core=None):
     def _init():
+        # Pin this subprocess to a specific CPU core if specified
+        if cpu_core is not None:
+            set_process_affinity(cpu_core)
+        
         env = PokemonPinballEnv("./roms/pokemon_pinball.gbc", env_conf)
         env = Monitor(env)
         env.reset(seed=(seed + rank))
         return env
     set_random_seed(seed)
     return _init
+
+def create_cpu_pinned_envs(num_envs, env_config, seed, start_core=0, skip_cores=None):
+    """
+    Create environments with CPU pinning strategy
+    
+    Args:
+        num_envs: Number of environments to create
+        env_config: Environment configuration
+        seed: Random seed
+        start_core: Starting CPU core (default: 0)
+        skip_cores: List of cores to skip (e.g., [0] to reserve core 0 for main process)
+    """
+    available_cores = get_available_cores()
+    if skip_cores:
+        available_cores = [core for core in available_cores if core not in skip_cores]
+    
+    print(f"Available CPU cores: {available_cores}")
+    print(f"Creating {num_envs} environments")
+    
+    env_fns = []
+    assigned_cores = []
+    
+    for i in range(num_envs):
+        # Assign cores in round-robin fashion
+        if available_cores:
+            cpu_core = available_cores[i % len(available_cores)]
+            assigned_cores.append(cpu_core)
+        else:
+            cpu_core = None
+            assigned_cores.append("None")
+        
+        env_fns.append(make_env(i, env_config, seed=seed, cpu_core=cpu_core))
+    
+    print(f"Environment-to-CPU mapping: {dict(enumerate(assigned_cores))}")
+    return env_fns
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Pokemon Pinball RL agent')
@@ -157,8 +218,15 @@ if __name__ == "__main__":
     parser.add_argument('--no-frame-stack-extra-observation', dest='frame_stack_extra_observation', action='store_false', help='Disable extra obs')
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable screen downsample')
     parser.add_argument('--reward-clip','--reward_clip', type=float, default=3.0, help='Reward clipping value')
+    
     # Parallel environments
     parser.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=24, help='Number of parallel environments')
+    
+    # CPU pinning options
+    parser.add_argument('--enable-cpu-pinning', action='store_true', help='Enable CPU core pinning for subprocesses')
+    parser.add_argument('--pin-start-core', type=int, default=1, help='Starting CPU core for pinning (default: 1, reserving 0 for main)')
+    parser.add_argument('--pin-skip-cores', type=int, nargs='*', default=[0], help='CPU cores to skip/reserve (default: [0])')
+    
     # Logging and runtime
     parser.add_argument('--headless', action='store_true', help='Run without rendering')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
@@ -168,7 +236,6 @@ if __name__ == "__main__":
     parser.add_argument('--save-freq-divisor', type=int, default=200, help='Divisor for checkpoint save frequency')
     parser.add_argument('--log-freq', type=int, default=100, help='Frequency for logging reward stats')
     args = parser.parse_args()
-
 
     # Assign parameters
     time_steps = args.timesteps
@@ -207,7 +274,21 @@ if __name__ == "__main__":
     num_cpu = args.num_cpu
     save_freq = max(1, time_steps // args.save_freq_divisor)
 
-    env = SubprocVecEnv([make_env(i, env_config, seed=args.seed) for i in range(num_cpu)])
+    # Create environments with optional CPU pinning
+    if args.enable_cpu_pinning:
+        print("Creating environments with CPU pinning enabled...")
+        env_fns = create_cpu_pinned_envs(
+            num_cpu, 
+            env_config, 
+            seed=args.seed,
+            start_core=args.pin_start_core,
+            skip_cores=args.pin_skip_cores
+        )
+        env = SubprocVecEnv(env_fns)
+    else:
+        print("Creating environments without CPU pinning...")
+        env = SubprocVecEnv([make_env(i, env_config, seed=args.seed) for i in range(num_cpu)])
+    
     env = VecNormalize(env, norm_obs=False, norm_reward=args.reward_clip > 0,
                        clip_obs=5.0, clip_reward=args.reward_clip,
                        gamma=gamma, epsilon=1e-8)
@@ -246,6 +327,7 @@ if __name__ == "__main__":
                         'max_grad_norm': args.max_grad_norm,
                         'normalize_advantage': args.normalize_advantage,
                         'rollout_buffer_size': args.n_steps * args.num_cpu,
+                        'cpu_pinning_enabled': args.enable_cpu_pinning,
                         }
         run = wandb.init(project=args.wandb_project, id=sess_id, resume="allow",
                          name=sess_id, config=wandb_config, sync_tensorboard=True,
