@@ -245,6 +245,7 @@ if __name__ == "__main__":
                         'vf_coef': args.vf_coef,
                         'max_grad_norm': args.max_grad_norm,
                         'normalize_advantage': args.normalize_advantage,
+                        'rollout_buffer_size': args.n_steps * args.num_cpu,
                         }
         run = wandb.init(project=args.wandb_project, id=sess_id, resume="allow",
                          name=sess_id, config=wandb_config, sync_tensorboard=True,
