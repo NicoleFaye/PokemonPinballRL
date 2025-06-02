@@ -114,6 +114,63 @@ def configure_decay_rate(initial_value, schedule_type, final_value_fraction=0.1)
         print(f"Warning: Unrecognized schedule type '{schedule_type}'. Using constant value.")
         return constant_fn(initial_value)
 
+def get_physical_cores():
+    """Get physical core information, distinguishing from hyperthreads"""
+    try:
+        # Get physical core count
+        physical_cores = psutil.cpu_count(logical=False)
+        logical_cores = psutil.cpu_count(logical=True)
+        
+        print(f"Detected {physical_cores} physical cores, {logical_cores} logical cores")
+        
+        # Try to get detailed CPU topology if available
+        try:
+            # On Linux, try to read CPU topology
+            core_map = {}
+            for cpu_id in range(logical_cores):
+                try:
+                    with open(f'/sys/devices/system/cpu/cpu{cpu_id}/topology/core_id', 'r') as f:
+                        physical_core_id = int(f.read().strip())
+                        if physical_core_id not in core_map:
+                            core_map[physical_core_id] = []
+                        core_map[physical_core_id].append(cpu_id)
+                except (FileNotFoundError, PermissionError):
+                    break
+            
+            if core_map:
+                # We have topology info - return first thread of each physical core
+                physical_core_list = []
+                hyperthread_map = {}
+                for phys_core, logical_cores_list in sorted(core_map.items()):
+                    primary_thread = min(logical_cores_list)
+                    physical_core_list.append(primary_thread)
+                    hyperthread_map[primary_thread] = logical_cores_list
+                
+                print(f"Physical core mapping: {hyperthread_map}")
+                return physical_core_list, hyperthread_map
+                
+        except Exception as e:
+            print(f"Could not detect CPU topology: {e}")
+        
+        # Fallback: assume even-numbered cores are physical cores
+        if logical_cores > physical_cores:
+            physical_core_list = list(range(0, logical_cores, 2))
+            hyperthread_map = {i: [i, i + 1] for i in range(0, logical_cores, 2) if i + 1 < logical_cores}
+            print(f"Using fallback mapping (even cores as physical): {hyperthread_map}")
+        else:
+            # No hyperthreading
+            physical_core_list = list(range(physical_cores))
+            hyperthread_map = {i: [i] for i in physical_core_list}
+            print("No hyperthreading detected")
+        
+        return physical_core_list, hyperthread_map
+        
+    except Exception as e:
+        print(f"Error detecting cores: {e}")
+        # Ultimate fallback
+        cores = list(range(os.cpu_count()))
+        return cores, {i: [i] for i in cores}
+
 def get_available_cores():
     """Get list of available CPU cores, respecting CPU affinity if set"""
     try:
@@ -148,7 +205,7 @@ def make_env(rank, env_conf, seed=0, cpu_core=None):
     set_random_seed(seed)
     return _init
 
-def create_cpu_pinned_envs(num_envs, env_config, seed, start_core=0, skip_cores=None):
+def create_cpu_pinned_envs(num_envs, env_config, seed, start_core=0, skip_cores=None, prefer_physical=True):
     """
     Create environments with CPU pinning strategy
     
@@ -158,12 +215,50 @@ def create_cpu_pinned_envs(num_envs, env_config, seed, start_core=0, skip_cores=
         seed: Random seed
         start_core: Starting CPU core (default: 0)
         skip_cores: List of cores to skip (e.g., [0] to reserve core 0 for main process)
+        prefer_physical: If True, prefer physical cores over hyperthreads
     """
-    available_cores = get_available_cores()
-    if skip_cores:
-        available_cores = [core for core in available_cores if core not in skip_cores]
+    if prefer_physical:
+        physical_cores, hyperthread_map = get_physical_cores()
+        print(f"Using physical core preference")
+        
+        # Filter out skipped cores
+        if skip_cores:
+            available_physical = [core for core in physical_cores if core not in skip_cores]
+        else:
+            available_physical = physical_cores.copy()
+        
+        print(f"Available physical cores after filtering: {available_physical}")
+        
+        # If we have enough physical cores, use only those
+        if len(available_physical) >= num_envs:
+            print(f"Using {num_envs} physical cores for environments")
+            available_cores = available_physical
+        else:
+            # Need to use some hyperthreads - get all logical cores for physical cores we're using
+            print(f"Need hyperthreads: {num_envs} envs > {len(available_physical)} physical cores")
+            available_cores = []
+            
+            # First, add all threads from available physical cores
+            for phys_core in available_physical:
+                if phys_core in hyperthread_map:
+                    available_cores.extend(hyperthread_map[phys_core])
+                else:
+                    available_cores.append(phys_core)
+            
+            # Remove duplicates and skipped cores
+            available_cores = list(set(available_cores))
+            if skip_cores:
+                available_cores = [core for core in available_cores if core not in skip_cores]
+            
+            available_cores.sort()
+            print(f"Using physical + hyperthread cores: {available_cores}")
+    else:
+        # Use all available logical cores
+        available_cores = get_available_cores()
+        if skip_cores:
+            available_cores = [core for core in available_cores if core not in skip_cores]
+        print(f"Using all logical cores: {available_cores}")
     
-    print(f"Available CPU cores: {available_cores}")
     print(f"Creating {num_envs} environments")
     
     env_fns = []
@@ -181,6 +276,13 @@ def create_cpu_pinned_envs(num_envs, env_config, seed, start_core=0, skip_cores=
         env_fns.append(make_env(i, env_config, seed=seed, cpu_core=cpu_core))
     
     print(f"Environment-to-CPU mapping: {dict(enumerate(assigned_cores))}")
+    
+    # Show physical vs hyperthread usage
+    if prefer_physical:
+        physical_used = sum(1 for core in assigned_cores if core in physical_cores)
+        hyperthread_used = len([c for c in assigned_cores if c != "None"]) - physical_used
+        print(f"Using {physical_used} physical cores, {hyperthread_used} hyperthreads")
+    
     return env_fns
 
 if __name__ == "__main__":
@@ -226,6 +328,8 @@ if __name__ == "__main__":
     parser.add_argument('--enable-cpu-pinning', action='store_true', help='Enable CPU core pinning for subprocesses')
     parser.add_argument('--pin-start-core', type=int, default=1, help='Starting CPU core for pinning (default: 1, reserving 0 for main)')
     parser.add_argument('--pin-skip-cores', type=int, nargs='*', default=[0], help='CPU cores to skip/reserve (default: [0])')
+    parser.add_argument('--pin-prefer-physical', action='store_true', default=True, help='Prefer physical cores over hyperthreads (default: True)')
+    parser.add_argument('--pin-use-hyperthreads', dest='pin_prefer_physical', action='store_false', help='Use all logical cores including hyperthreads')
     
     # Logging and runtime
     parser.add_argument('--headless', action='store_true', help='Run without rendering')
@@ -282,7 +386,8 @@ if __name__ == "__main__":
             env_config, 
             seed=args.seed,
             start_core=args.pin_start_core,
-            skip_cores=args.pin_skip_cores
+            skip_cores=args.pin_skip_cores,
+            prefer_physical=args.pin_prefer_physical
         )
         env = SubprocVecEnv(env_fns)
     else:
