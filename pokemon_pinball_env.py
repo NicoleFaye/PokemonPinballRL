@@ -42,7 +42,7 @@ class EnvironmentConfig:
     visual_mode: str = "screen"  # "screen" or "game_area"
     reduce_screen_resolution: bool = True
     max_episode_frames: int = 0  # 0 means no limit
-    episode_mode: str = "life"  # "life", "ball", or "game"
+    episode_mode: str = "life"  # "life", "ball", or "game", where ball triggers even if the ball saver is active
     reset_condition: str = "game"  # "life", "ball", or "game"
 
 
