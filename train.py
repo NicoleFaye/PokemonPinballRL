@@ -4,6 +4,7 @@ import argparse
 from os.path import exists
 from os import _exit, makedirs
 from pathlib import Path
+from datetime import datetime
 import suppress_warnings  # Import the warning suppression module first
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
@@ -13,20 +14,6 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
 from gymnasium import wrappers
 from pokemon_pinball_env import PokemonPinballEnv
-
-class VecNormCallback(BaseCallback):
-    # Callback for saving VecNormalize statistics at regular intervals
-    def __init__(self, save_freq, save_path, name_prefix, verbose=0):
-        super().__init__(verbose)
-        self.save_freq = save_freq
-        self.save_path = save_path
-        self.name_prefix = name_prefix
-
-    def _on_step(self) -> bool:
-        if self.n_calls % self.save_freq == 0:
-            vecnorm = self.model.get_vec_normalize_env()
-            vecnorm.save(f"{self.save_path}/{self.name_prefix}_{self.num_timesteps}_vecnormalize.pkl")
-        return True
 
 class RewardMonitorCallback(BaseCallback):
     # Monitor different reward components and normalized rewards
@@ -158,7 +145,7 @@ if __name__ == "__main__":
     parser.add_argument('--max-episode-frames', type=int, default=0, help='Max frames per episode')
     parser.add_argument('--no-frame-stack-extra-observation', dest='frame_stack_extra_observation', action='store_false', help='Disable extra obs')
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable screen downsample')
-    parser.add_argument('--reward-clip','--reward_clip', type=float, default=3.0, help='Reward clipping value')
+    parser.add_argument('--reward-clip','--reward_clip', type=float, default=0, help='Reward clipping value')
     # Parallel environments
     parser.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=24, help='Number of parallel environments')
     # Logging and runtime
@@ -193,7 +180,6 @@ if __name__ == "__main__":
         'reset_condition': args.reset_condition,
     }
 
-    from datetime import datetime
     if args.resume:
         resume_path = Path(args.resume)
         reset_flag = False
@@ -210,16 +196,12 @@ if __name__ == "__main__":
     save_freq = max(1, time_steps // args.save_freq_divisor)
 
     env = SubprocVecEnv([make_env(i, env_config, seed=args.seed) for i in range(num_cpu)])
-    env = VecNormalize(env, norm_obs=False, norm_reward=args.reward_clip > 0,
-                       clip_obs=5.0, clip_reward=args.reward_clip,
-                       gamma=gamma, epsilon=1e-8)
 
     checkpoint_callback = CheckpointCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
-    normalize_callback = VecNormCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
     reward_monitor_callback = RewardMonitorCallback(log_freq=args.log_freq)
     lr_monitor_callback = LearningRateMonitorCallback(log_freq=max(1, time_steps//100))
     clip_range_monitor_callback = ClipRangeMonitorCallback(log_freq=max(1, time_steps//100))
-    callbacks = [checkpoint_callback, normalize_callback, reward_monitor_callback, lr_monitor_callback, clip_range_monitor_callback]
+    callbacks = [checkpoint_callback, reward_monitor_callback, lr_monitor_callback, clip_range_monitor_callback]
 
     if use_wandb:
         import wandb
@@ -283,17 +265,7 @@ if __name__ == "__main__":
     # Initialize or resume model
     if args.resume and exists(args.resume):
         print(f"\nResuming from checkpoint: {args.resume}")
-        norm_path = args.resume.replace(".zip", "") + "_vecnormalize.pkl"
-        if exists(norm_path):
-            print(f"Loading normalization stats from: {norm_path}")
-            env = VecNormalize.load(norm_path, env)
-            env.training = True
-            env.norm_obs = False
-            # Handle reward_clip=0 as None (no clipping)
-            env.clip_reward = None if args.reward_clip == 0 else args.reward_clip
-        else:
-            print("No normalization stats found, using default initialization")
-        
+
         model = PPO.load(args.resume, env=env)
         
         # Note about learning rate and clip range when resuming
