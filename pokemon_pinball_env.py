@@ -304,13 +304,11 @@ class PokemonPinballEnv(gym.Env):
             
         observation = self._get_obs()
         
-        # Check for stuck ball
-        truncated = self._check_if_stuck(observation)
         
         info = self._get_info()
         
         # Add episode completion flag when episode ends
-        if done or truncated:
+        if done :
             info['episode_complete'] = [True]
             info['episode_length'] = [float(self._frames_played)]
             
@@ -327,10 +325,7 @@ class PokemonPinballEnv(gym.Env):
             )
             info['total_ball_upgrades'] = [float(total_ball_upgrades)]
         
-        # Add stuck status to info if applicable
-        if truncated:
-            info['truncated_reason'] = ['stuck_ball']
-            
+            truncated = False
         return observation, reward, done, truncated, info
         
     def reset(self, seed=None, options=None):
@@ -624,56 +619,3 @@ class PokemonPinballEnv(gym.Env):
         
         return reward
         
-    def _check_if_stuck(self, observation):
-        """
-        Check if the ball is stuck in the same area for too long.
-        
-        Args:
-            observation: Current observation
-            
-        Returns:
-            Boolean indicating if episode should be truncated due to stuck ball
-        """
-        # Get current ball position
-        game_wrapper = self._game_wrapper
-        current_x = game_wrapper.ball_x
-        current_y = game_wrapper.ball_y
-        current_score = game_wrapper.score
-        
-        # Add to history
-        self.ball_position_history.append((current_x, current_y))
-        
-        # Only check after we have enough history
-        if len(self.ball_position_history) < self.stuck_detection_window:
-            return False
-            
-        # Keep history at fixed size
-        if len(self.ball_position_history) > self.stuck_detection_window:
-            self.ball_position_history.pop(0)
-        
-        # Check if score has changed enough (if score increases a lot, agent isn't stuck)
-        score_change = current_score - self.last_score
-        if score_change > self.stuck_detection_reward_threshold:
-            # Reset history if significant progress was made
-            self.ball_position_history = []
-            self.last_score = current_score
-            return False
-            
-        # Calculate maximum distance moved in any direction
-        max_x_change = 0
-        max_y_change = 0
-        for x, y in self.ball_position_history:
-            x_change = abs(current_x - x)
-            y_change = abs(current_y - y)
-            max_x_change = max(max_x_change, x_change)
-            max_y_change = max(max_y_change, y_change)
-            
-        # If both x and y movement are below threshold, ball is stuck
-        if max_x_change < self.stuck_detection_threshold and max_y_change < self.stuck_detection_threshold:
-            return True
-            
-        # Update last score
-        self.last_score = current_score
-        return False
-
-
