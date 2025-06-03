@@ -40,7 +40,7 @@ DEFAULT_OBSERVATION_SPACE = spaces.Box(low=0, high=255, shape=OBSERVATION_SHAPE,
 DEFAULT_CONFIG = {
     "debug": False,
     "headless": False,
-    "reward_shaping": "basic",
+    "reward_shaping": "comprehensive", 
     "info_level": 1,
     "frame_skip": 4,
     "visual_mode": "screen",  # alternative is "screen" for full RGB screen
@@ -105,7 +105,6 @@ class PokemonPinballEnv(gym.Env):
         self.visual_mode = config['visual_mode']
         self.reduce_screen_resolution = config.get('reduce_screen_resolution', True)
 
-        self.max_episode_frames = config.get('max_episode_frames', 0)
 
         # Episode mode and reset condition configuration
         self.episode_mode = config.get('episode_mode', 'life')  # life, ball, or game
@@ -281,9 +280,6 @@ class PokemonPinballEnv(gym.Env):
 
         # Get game state
         self._calculate_fitness()
-        
-        # Check if max frames reached
-        max_frame_reached = self.max_episode_frames > 0 and self._frames_played >= self.max_episode_frames
 
         # Determine if episode is done based on episode_mode
         if self.episode_mode == "life":
