@@ -15,38 +15,6 @@ from stable_baselines3.common.logger import configure
 from gymnasium import wrappers
 from pokemon_pinball_env import PokemonPinballEnv
 
-class RewardMonitorCallback(BaseCallback):
-    # Monitor different reward components and normalized rewards
-    def __init__(self, verbose=0, log_freq=100):
-        super().__init__(verbose)
-        self.log_freq = log_freq
-
-    def _on_step(self) -> bool:
-        if self.n_calls % self.log_freq == 0:
-            vec_normalize = self.model.get_vec_normalize_env()
-            if hasattr(vec_normalize, 'return_rms'):
-                recent_rewards = vec_normalize.unwrapped.get_attr('_fitness')[:5]
-                recent_raw_diffs = vec_normalize.unwrapped.get_attr('_fitness')[:5] - \
-                                   vec_normalize.unwrapped.get_attr('_previous_fitness')[:5]
-                if hasattr(vec_normalize.return_rms, 'mean') and hasattr(vec_normalize.return_rms, 'var'):
-                    norm_mean = vec_normalize.return_rms.mean
-                    norm_var = vec_normalize.return_rms.var
-                    norm_std = norm_var ** 0.5
-                    normalized = [(r - norm_mean) / (norm_std + 1e-8) for r in recent_raw_diffs]
-                    clip_val = vec_normalize.clip_reward
-                    clipped = [max(min(r, clip_val), -clip_val) for r in normalized]
-                    self.logger.record("reward/raw_rewards_mean", float(sum(recent_raw_diffs))/len(recent_raw_diffs))
-                    self.logger.record("reward/raw_rewards_min", float(min(recent_raw_diffs)))
-                    self.logger.record("reward/raw_rewards_max", float(max(recent_raw_diffs)))
-                    self.logger.record("reward/norm_mean", float(norm_mean))
-                    self.logger.record("reward/norm_std", float(norm_std))
-                    self.logger.record("reward/normalized_rewards_mean", float(sum(normalized))/len(normalized))
-                    self.logger.record("reward/normalized_rewards_min", float(min(normalized)))
-                    self.logger.record("reward/normalized_rewards_max", float(max(normalized)))
-                    self.logger.record("reward/clipped_percent", 
-                                      100 * sum(1 for r in normalized if r > clip_val or r < -clip_val) / len(normalized))
-        return True
-
 def configure_decay_rate(initial_value, schedule_type, final_value_fraction=0.1):
     final_value = initial_value * final_value_fraction
     if schedule_type == 'constant':
@@ -169,8 +137,7 @@ if __name__ == "__main__":
     env = SubprocVecEnv([make_env(i, env_config, seed=args.seed) for i in range(num_cpu)])
 
     checkpoint_callback = CheckpointCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
-    reward_monitor_callback = RewardMonitorCallback(log_freq=args.log_freq)
-    callbacks = [checkpoint_callback, reward_monitor_callback ]
+    callbacks = [checkpoint_callback ]
 
     if use_wandb:
         import wandb
