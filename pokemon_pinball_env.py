@@ -101,7 +101,7 @@ class PokemonPinballEnv(gym.Env):
         self.debug = config['debug']
         self.headless = config['headless']
 
-        self.frame_skip = config['frame_skip']
+        self.frame_skip = max(1,config['frame_skip'])
         self.visual_mode = config['visual_mode']
         self.reduce_screen_resolution = config.get('reduce_screen_resolution', True)
 
@@ -271,7 +271,7 @@ class PokemonPinballEnv(gym.Env):
                 action_func()
             
         # Perform the game tick
-        ticks = 1 + self.frame_skip
+        ticks = self.frame_skip
         if not self.debug:
             self.pyboy.tick(ticks, not self.headless, False)
         else:
