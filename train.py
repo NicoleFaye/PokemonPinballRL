@@ -66,6 +66,10 @@ def make_env(rank, env_conf, seed=0):
         env = PokemonPinballEnv("./roms/pokemon_pinball.gbc", env_conf)
         env = Monitor(env)
         wrappers.FrameStackObservation(env, env_conf['frame_stack'])
+        if env_conf['reward_clip'] is not None:
+            env = wrappers.ClipReward(env, env_conf['reward_clip'])
+        if env_conf['normalize_reward']:
+            env = wrappers.NormalizeReward(env)
         env.reset(seed=(seed + rank))
         return env
     set_random_seed(seed)
@@ -106,6 +110,7 @@ if __name__ == "__main__":
     parser.add_argument('--no-frame-stack-extra-observation', dest='frame_stack_extra_observation', action='store_false', help='Disable extra obs')
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable screen downsample')
     parser.add_argument('--reward-clip','--reward_clip', type=float, default=None, help='Reward clipping value')
+    parser.add_argument('--normalize-reward', dest='normalize_reward', action='store_true', help='Normalize rewards using VecNormalize')
     # Parallel environments
     parser.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=24, help='Number of parallel environments')
     # Logging and runtime
@@ -138,6 +143,8 @@ if __name__ == "__main__":
         'max_episode_frames': args.max_episode_frames,
         'episode_mode': args.episode_mode,
         'reset_condition': args.reset_condition,
+        'reward_clip': args.reward_clip,
+        'normalize_reward': args.normalize_reward,
     }
 
     if args.resume:
