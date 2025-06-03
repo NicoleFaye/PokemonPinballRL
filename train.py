@@ -47,46 +47,6 @@ class RewardMonitorCallback(BaseCallback):
                                       100 * sum(1 for r in normalized if r > clip_val or r < -clip_val) / len(normalized))
         return True
 
-class LearningRateMonitorCallback(BaseCallback):
-    # Callback for monitoring learning rate during training
-    def __init__(self, verbose=0, log_freq=1000):
-        super().__init__(verbose)
-        self.log_freq = log_freq
-
-    def _on_step(self) -> bool:
-        if self.n_calls % self.log_freq == 0:
-            if hasattr(self.model, 'policy') and hasattr(self.model.policy, 'optimizer'):
-                for param_group in self.model.policy.optimizer.param_groups:
-                    current_lr = param_group['lr']
-                    print(f"Step: {self.n_calls}, Current learning rate: {current_lr}")
-                    self.logger.record("train/learning_rate", current_lr)
-                    if 'wandb' in sys.modules and hasattr(sys.modules['wandb'], 'log'):
-                        import wandb
-                        wandb.log({"learning_rate": current_lr}, step=self.num_timesteps)
-        return True
-
-class ClipRangeMonitorCallback(BaseCallback):
-    # Callback for monitoring clip range during training
-    def __init__(self, verbose=0, log_freq=1000):
-        super().__init__(verbose)
-        self.log_freq = log_freq
-
-    def _on_step(self) -> bool:
-        if self.n_calls % self.log_freq == 0:
-            if hasattr(self.model, 'clip_range'):
-                if callable(self.model.clip_range):
-                    total_timesteps = self.model._total_timesteps
-                    progress_remaining = 1.0 - (self.num_timesteps / total_timesteps)
-                    current_clip_range = self.model.clip_range(progress_remaining)
-                else:
-                    current_clip_range = self.model.clip_range
-                print(f"Step: {self.n_calls}, Current clip range: {current_clip_range}")
-                self.logger.record("train/clip_range", current_clip_range)
-                if 'wandb' in sys.modules and hasattr(sys.modules['wandb'], 'log'):
-                    import wandb
-                    wandb.log({"clip_range": current_clip_range}, step=self.num_timesteps)
-        return True
-
 def configure_decay_rate(initial_value, schedule_type, final_value_fraction=0.1):
     final_value = initial_value * final_value_fraction
     if schedule_type == 'constant':
@@ -145,7 +105,7 @@ if __name__ == "__main__":
     parser.add_argument('--max-episode-frames', type=int, default=0, help='Max frames per episode')
     parser.add_argument('--no-frame-stack-extra-observation', dest='frame_stack_extra_observation', action='store_false', help='Disable extra obs')
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable screen downsample')
-    parser.add_argument('--reward-clip','--reward_clip', type=float, default=0, help='Reward clipping value')
+    parser.add_argument('--reward-clip','--reward_clip', type=float, default=None, help='Reward clipping value')
     # Parallel environments
     parser.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=24, help='Number of parallel environments')
     # Logging and runtime
@@ -199,9 +159,7 @@ if __name__ == "__main__":
 
     checkpoint_callback = CheckpointCallback(save_freq=save_freq, save_path=sess_path, name_prefix="poke")
     reward_monitor_callback = RewardMonitorCallback(log_freq=args.log_freq)
-    lr_monitor_callback = LearningRateMonitorCallback(log_freq=max(1, time_steps//100))
-    clip_range_monitor_callback = ClipRangeMonitorCallback(log_freq=max(1, time_steps//100))
-    callbacks = [checkpoint_callback, reward_monitor_callback, lr_monitor_callback, clip_range_monitor_callback]
+    callbacks = [checkpoint_callback, reward_monitor_callback ]
 
     if use_wandb:
         import wandb
