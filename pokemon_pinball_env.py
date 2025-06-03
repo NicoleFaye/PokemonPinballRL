@@ -42,10 +42,8 @@ DEFAULT_CONFIG = {
     "headless": False,
     "reward_shaping": "basic",
     "info_level": 1,
-    "frame_stack": 4,
     "frame_skip": 4,
     "visual_mode": "screen",  # alternative is "screen" for full RGB screen
-    "frame_stack_extra_observation": True,
     "reduce_screen_resolution": True,  # Downsample full screen by factor of 2 when using "screen" mode
     "max_episode_frames": 0, # 0 means no limit
     "episode_mode":"life", # life, ball, or game
@@ -104,8 +102,6 @@ class PokemonPinballEnv(gym.Env):
         self.headless = config['headless']
 
         self.frame_skip = config['frame_skip']
-        self.frame_stack = config['frame_stack']
-        self.frame_stack_extra_observation = config['frame_stack_extra_observation']
         self.visual_mode = config['visual_mode']
         self.reduce_screen_resolution = config.get('reduce_screen_resolution', True)
 
@@ -121,7 +117,7 @@ class PokemonPinballEnv(gym.Env):
         self._initialized = False  
         
         # Stuck detection parameters 
-        self.stuck_detection_window = max(50, self.frame_stack * 5)  # At least 5x the frame stack
+        self.stuck_detection_window = 100
         self.stuck_detection_threshold = 5.0  
         self.stuck_detection_reward_threshold = 100  # Min score change to avoid being "stuck"
         
@@ -134,21 +130,13 @@ class PokemonPinballEnv(gym.Env):
         # Set output shape based on visual mode
         if self.visual_mode == "game_area":
             # Game area in Pokemon Pinball is a 16x20 grid
-            self.output_shape = (16, 20, self.frame_stack)
+            self.output_shape = (16, 20)
         else:  # screen mode
             if self.reduce_screen_resolution:
-                self.output_shape = (72, 80, self.frame_stack)  # Downsampled by factor of 2
+                self.output_shape = (72, 80)  # Downsampled by factor of 2
             else:
-                self.output_shape = (144, 160, self.frame_stack)
+                self.output_shape = (144, 160)
 
-        # Initialize frame stacking structures if needed
-        if self.frame_stack_extra_observation:
-            # Create arrays to store recent ball positions and velocities for frame stacking
-            self.recent_ball_x = np.zeros((self.frame_stack,), dtype=np.float32)
-            self.recent_ball_y = np.zeros((self.frame_stack,), dtype=np.float32)
-            self.recent_ball_x_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
-            self.recent_ball_y_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
-        
         self.pyboy.set_emulation_speed(0)
             
         self.action_space = spaces.Discrete(len(Actions))
@@ -188,7 +176,7 @@ class PokemonPinballEnv(gym.Env):
         
         # Create the appropriate observation space based on visual mode
         if self.visual_mode == "game_area":
-            # Game area is a 2D grid with stacked frames (16x20xframes)
+            # Game area is a 2D grid (16x20)
             observations_dict.update({
                 'visual_representation': spaces.Box(low=0, high=255, shape=self.output_shape, dtype=np.uint8)
             })
@@ -205,14 +193,12 @@ class PokemonPinballEnv(gym.Env):
         if info_level >= 1:
             # Level 1 - ball position and velocity
             obs_shape=(1,)
-            if self.frame_stack_extra_observation:
-                obs_shape=(1,self.frame_stack)
 
             observations_dict.update({
-                'ball_x': spaces.Box(low=-128, high=128, shape=obs_shape if self.frame_stack_extra_observation else (1,), dtype=np.float32),
-                'ball_y': spaces.Box(low=-128, high=128, shape=obs_shape if self.frame_stack_extra_observation else (1,), dtype=np.float32),
-                'ball_x_velocity': spaces.Box(low=-128, high=128, shape=obs_shape if self.frame_stack_extra_observation else (1,), dtype=np.float32),
-                'ball_y_velocity': spaces.Box(low=-128, high=128, shape=obs_shape if self.frame_stack_extra_observation else (1,), dtype=np.float32),
+                'ball_x': spaces.Box(low=-128, high=128, shape=obs_shape , dtype=np.float32),
+                'ball_y': spaces.Box(low=-128, high=128, shape=obs_shape , dtype=np.float32),
+                'ball_x_velocity': spaces.Box(low=-128, high=128, shape=obs_shape , dtype=np.float32),
+                'ball_y_velocity': spaces.Box(low=-128, high=128, shape=obs_shape , dtype=np.float32),
             })
         
         if info_level >= 2:
@@ -404,13 +390,6 @@ class PokemonPinballEnv(gym.Env):
         if hasattr(self, buffer_key):
             delattr(self, buffer_key)
         
-        # Reset frame stacking for ball positions if used
-        if self.frame_stack_extra_observation:
-            self.recent_ball_x = np.zeros((self.frame_stack,), dtype=np.float32)
-            self.recent_ball_y = np.zeros((self.frame_stack,), dtype=np.float32)
-            self.recent_ball_x_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
-            self.recent_ball_y_velocity = np.zeros((self.frame_stack,), dtype=np.float32)
-        
         # Track episode completion
         self.episodes_completed += 1
         self._episode_count += 1
@@ -538,36 +517,6 @@ class PokemonPinballEnv(gym.Env):
             
             visual_obs = screen_img
         
-        # Apply frame stacking if enabled
-        if self.frame_stack > 1:
-            buffer_key = f"{self.visual_mode}_buffer"
-            
-            # For the first observation, initialize the frame buffer
-            if not hasattr(self, buffer_key):
-                # Both game_area and screen are now 2D arrays, stack as channels
-                frame_buffer = np.zeros((*visual_obs.shape, self.frame_stack), dtype=np.uint8)
-                
-                # Fill all frame slots with the initial observation
-                for i in range(self.frame_stack):
-                    frame_buffer[..., i] = visual_obs
-                
-                setattr(self, buffer_key, frame_buffer)
-            else:
-                # Get the existing buffer
-                frame_buffer = getattr(self, buffer_key)
-                
-                # Shift frames (roll the time dimension)
-                frame_buffer = np.roll(frame_buffer, shift=-1, axis=-1)
-                
-                # Update the newest frame position
-                frame_buffer[..., -1] = visual_obs
-                
-                # Save back to object
-                setattr(self, buffer_key, frame_buffer)
-            
-            # Use the frame buffer as observation
-            visual_obs = getattr(self, buffer_key)
-        
         # Create observation dictionary with properly formatted numpy arrays
         observation = {
             "visual_representation": np.asarray(visual_obs, dtype=np.uint8),
@@ -577,37 +526,17 @@ class PokemonPinballEnv(gym.Env):
         if self.info_level == 0:
             return observation.get('visual_representation')
         
-        # Level 1 - position and velocity information
-        if self.frame_stack_extra_observation:
-            # Update the recent positions and velocities
-            self.recent_ball_x = np.roll(self.recent_ball_x, shift=-1)
-            self.recent_ball_y = np.roll(self.recent_ball_y, shift=-1)
-            self.recent_ball_x_velocity = np.roll(self.recent_ball_x_velocity, shift=-1)
-            self.recent_ball_y_velocity = np.roll(self.recent_ball_y_velocity, shift=-1)
-            
-            self.recent_ball_x[-1] = float(game_wrapper.ball_x) 
-            self.recent_ball_y[-1] = float(game_wrapper.ball_y) 
-            self.recent_ball_x_velocity[-1] = float(game_wrapper.ball_x_velocity) 
-            self.recent_ball_y_velocity[-1] = float(game_wrapper.ball_y_velocity) 
-            
-            observation.update({
-                "ball_x": np.expand_dims(self.recent_ball_x, axis=0).astype(np.float32),
-                "ball_y": np.expand_dims(self.recent_ball_y, axis=0).astype(np.float32),
-                "ball_x_velocity": np.expand_dims(self.recent_ball_x_velocity, axis=0).astype(np.float32),
-                "ball_y_velocity": np.expand_dims(self.recent_ball_y_velocity, axis=0).astype(np.float32),
-            })
-        else:
-            ball_x = float(game_wrapper.ball_x) 
-            ball_y = float(game_wrapper.ball_y) 
-            ball_x_velocity = float(game_wrapper.ball_x_velocity) 
-            ball_y_velocity = float(game_wrapper.ball_y_velocity) 
-            
-            observation.update({
-                "ball_x": np.array([ball_x], dtype=np.float32),
-                "ball_y": np.array([ball_y], dtype=np.float32),
-                "ball_x_velocity": np.array([ball_x_velocity], dtype=np.float32),
-                "ball_y_velocity": np.array([ball_y_velocity], dtype=np.float32),
-            })
+        ball_x = float(game_wrapper.ball_x) 
+        ball_y = float(game_wrapper.ball_y) 
+        ball_x_velocity = float(game_wrapper.ball_x_velocity) 
+        ball_y_velocity = float(game_wrapper.ball_y_velocity) 
+        
+        observation.update({
+            "ball_x": np.array([ball_x], dtype=np.float32),
+            "ball_y": np.array([ball_y], dtype=np.float32),
+            "ball_x_velocity": np.array([ball_x_velocity], dtype=np.float32),
+            "ball_y_velocity": np.array([ball_y_velocity], dtype=np.float32),
+        })
         
         if self.info_level == 1:
             return observation
