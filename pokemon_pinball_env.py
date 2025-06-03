@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
     "headless": False,
     "reward_shaping": "basic",
     "info_level": 1,
+    "frame_skip": 4,
     "visual_mode": "screen",  # alternative is "screen" for full RGB screen
     "reduce_screen_resolution": True,  # Downsample full screen by factor of 2 when using "screen" mode
     "max_episode_frames": 0, # 0 means no limit
@@ -100,6 +101,7 @@ class PokemonPinballEnv(gym.Env):
         self.debug = config['debug']
         self.headless = config['headless']
 
+        self.frame_skip = config['frame_skip']
         self.visual_mode = config['visual_mode']
         self.reduce_screen_resolution = config.get('reduce_screen_resolution', True)
 
@@ -248,7 +250,7 @@ class PokemonPinballEnv(gym.Env):
         # Save current state before taking action
         self._previous_balls_left = self._game_wrapper.balls_left
         
-        action_release_delay = 1
+        action_release_delay = math.ceil((1 + self.frame_skip) / 2)
 
         action_map = {
             Actions.LEFT_FLIPPER_PRESS.value: lambda: self.pyboy.button_press("left"),
@@ -269,7 +271,7 @@ class PokemonPinballEnv(gym.Env):
                 action_func()
             
         # Perform the game tick
-        ticks = 1 
+        ticks = 1 + self.frame_skip
         if not self.debug:
             self.pyboy.tick(ticks, not self.headless, False)
         else:
