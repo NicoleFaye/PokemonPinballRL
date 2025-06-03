@@ -11,6 +11,7 @@ from stable_baselines3.common.utils import get_linear_fn, get_schedule_fn, const
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList, BaseCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
+from gymnasium import wrappers
 from pokemon_pinball_env import PokemonPinballEnv
 
 class VecNormCallback(BaseCallback):
@@ -117,6 +118,7 @@ def make_env(rank, env_conf, seed=0):
     def _init():
         env = PokemonPinballEnv("./roms/pokemon_pinball.gbc", env_conf)
         env = Monitor(env)
+        wrappers.FrameStackObservation(env, env_conf['frame_stack'])
         env.reset(seed=(seed + rank))
         return env
     set_random_seed(seed)
