@@ -284,16 +284,16 @@ class PokemonPinballEnv(gym.Env):
         # Determine if episode is done based on episode_mode
         if self.episode_mode == "life":
             # Episode ends when a single life is lost (immediate loss, not after saver)
-            done = self._game_wrapper.lost_ball_during_saver or max_frame_reached
+            done = self._game_wrapper.lost_ball_during_saver 
         elif self.episode_mode == "ball":
             # Episode ends when a ball is completely lost (including after saver)
-            done = self.ball_lost or max_frame_reached
+            done = self.ball_lost
         elif self.episode_mode == "game":
             # Episode ends when the game is over (all balls used)
-            done = self._game_wrapper.game_over or max_frame_reached
+            done = self._game_wrapper.game_over 
         else:
             # Default behavior from original code
-            done = self._game_wrapper.lost_ball_during_saver or self._game_wrapper.game_over or self._game_wrapper.balls_left < 2 or max_frame_reached
+            done = self._game_wrapper.lost_ball_during_saver or self._game_wrapper.game_over or self._game_wrapper.balls_left < 2 
         
         # Apply reward shaping by calling the reward function
         # but passing self for tracking state
