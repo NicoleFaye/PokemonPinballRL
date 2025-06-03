@@ -66,8 +66,8 @@ def make_env(rank, env_conf, seed=0):
         env = PokemonPinballEnv("./roms/pokemon_pinball.gbc", env_conf)
         env = Monitor(env)
         wrappers.FrameStackObservation(env, env_conf['frame_stack'])
-        if env_conf['reward_clip'] is not None:
-            env = wrappers.ClipReward(env, env_conf['reward_clip'])
+        if env_conf['clip_reward'] is not None:
+            env = wrappers.ClipReward(env, env_conf['reward_clip_min'], env_conf['reward_clip_max'])
         if env_conf['normalize_reward']:
             env = wrappers.NormalizeReward(env)
         env.reset(seed=(seed + rank))
@@ -109,7 +109,9 @@ if __name__ == "__main__":
     parser.add_argument('--max-episode-frames', type=int, default=0, help='Max frames per episode')
     parser.add_argument('--no-frame-stack-extra-observation', dest='frame_stack_extra_observation', action='store_false', help='Disable extra obs')
     parser.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', action='store_false', help='Disable screen downsample')
-    parser.add_argument('--reward-clip','--reward_clip', type=float, default=None, help='Reward clipping value')
+    parser.add_argument('--clip-reward','--clip_reward', dest='clip_reward', action='store_true', help='Reward clipping value')
+    parser.add_argument('--reward-clip-max', type=float, default=10.0, help='Maximum reward clipping value')
+    parser.add_argument('--reward-clip-min', type=float, default=-10.0, help='Minimum reward clipping value')
     parser.add_argument('--normalize-reward', dest='normalize_reward', action='store_true', help='Normalize rewards using VecNormalize')
     # Parallel environments
     parser.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=24, help='Number of parallel environments')
@@ -143,7 +145,9 @@ if __name__ == "__main__":
         'max_episode_frames': args.max_episode_frames,
         'episode_mode': args.episode_mode,
         'reset_condition': args.reset_condition,
-        'reward_clip': args.reward_clip,
+        'clip_reward': args.clip_reward,
+        'reward_clip_max': args.reward_clip_max,
+        'reward_clip_min': args.reward_clip_min,
         'normalize_reward': args.normalize_reward,
     }
 
@@ -190,7 +194,9 @@ if __name__ == "__main__":
                         'clip_range': args.clip_range,
                         'clip_range_schedule': args.clip_range_schedule,
                         'final_clip_range_fraction': args.final_clip_range_fraction,
-                        'reward_clip': args.reward_clip,
+                        'clip_reward': args.clip_reward,
+                        'reward_clip_max': args.reward_clip_max,
+                        'reward_clip_min': args.reward_clip_min,
                         'vf_coef': args.vf_coef,
                         'max_grad_norm': args.max_grad_norm,
                         'normalize_advantage': args.normalize_advantage,
