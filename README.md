@@ -2,6 +2,7 @@
 
 This project uses the Stable Baselines 3 reinforcement learning library to train an agent to play Pokemon Pinball.
 
+## Example RL agent Gameplay
 <img src="https://github.com/Baekalfen/PyBoy/blob/master/extras/README/pinball.gif" width="480">
 
 ## Overview
