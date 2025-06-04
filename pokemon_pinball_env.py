@@ -29,6 +29,11 @@ class Actions(enum.Enum):
     RIGHT_FLIPPER_PRESS = 2
     LEFT_FLIPPER_RELEASE = 3
     RIGHT_FLIPPER_RELEASE = 4
+    #LEFT_TILT = 5
+    #RIGHT_TILT = 6
+    #UP_TILT = 7
+    #LEFT_UP_TILT = 8
+    #RIGHT_UP_TILT = 9
 
 
 @dataclass
@@ -427,6 +432,12 @@ class PokemonPinballEnv(gym.Env):
             Actions.RIGHT_FLIPPER_PRESS.value: lambda: self.pyboy.button_press("a"),
             Actions.LEFT_FLIPPER_RELEASE.value: lambda: self.pyboy.button_release("left"),
             Actions.RIGHT_FLIPPER_RELEASE.value: lambda: self.pyboy.button_release("a"),
+            #Actions.LEFT_TILT.value: lambda: self.pyboy.button("down",action_release_delay),
+            #Actions.RIGHT_TILT.value: lambda: self.pyboy.button("b",action_release_delay),
+            #Actions.UP_TILT.value: lambda: self.pyboy.button("select",action_release_delay),
+            #Actions.LEFT_UP_TILT.value: lambda: (self.pyboy.button("select",action_release_delay), self.pyboy.button("down",action_release_delay)),
+            #Actions.RIGHT_UP_TILT.value: lambda: (self.pyboy.button("select",action_release_delay), self.pyboy.button("b",action_release_delay)),
+       
         }
         
         # Execute action if it's not IDLE
