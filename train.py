@@ -4,7 +4,6 @@ from os.path import exists
 from os import _exit, makedirs
 from pathlib import Path
 from datetime import datetime
-import suppress_warnings  # Import the warning suppression module first
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 from stable_baselines3.common.utils import get_linear_fn, get_schedule_fn, constant_fn, set_random_seed
@@ -223,7 +222,7 @@ def make_env(rank, env_conf, seed=0):
     def _init():
         env = PokemonPinballEnv("./roms/pokemon_pinball.gbc", env_conf)
         env = Monitor(env)
-        wrappers.FrameStackObservation(env, env_conf['frame_stack'])
+        wrappers.FrameStack(env, env_conf['frame_stack'])
         if env_conf['clip_reward'] is not None:
             env = wrappers.ClipReward(env, env_conf['reward_clip_min'], env_conf['reward_clip_max'])
         if env_conf['normalize_reward']:
