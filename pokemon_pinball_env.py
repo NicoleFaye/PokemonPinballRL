@@ -306,7 +306,7 @@ class PokemonPinballEnv(gym.Env):
         if config is None:
             config = {}
         if isinstance(config, dict):
-            config = EnvironmentConfig(**config)
+            config = EnvironmentConfig(config)
         self.config = config
         
         # Instance tracking
