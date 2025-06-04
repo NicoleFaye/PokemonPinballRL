@@ -49,6 +49,14 @@ class EnvironmentConfig:
     episode_mode: str = "life"  # "life", "ball", or "game", where ball triggers even if the ball saver is active
     reset_condition: str = "game"  # "life", "ball", or "game"
 
+    @classmethod
+    def from_dict(cls, config_dict):
+        """Create EnvironmentConfig from dictionary, ignoring extra keys."""
+        from dataclasses import fields
+        valid_fields = {field.name for field in fields(cls)}
+        filtered_config = {k: v for k, v in config_dict.items() if k in valid_fields}
+        return cls(**filtered_config)
+
 
 class GameStateTracker:
     """Tracks game state changes for reward calculation."""
@@ -306,7 +314,7 @@ class PokemonPinballEnv(gym.Env):
         if config is None:
             config = {}
         if isinstance(config, dict):
-            config = EnvironmentConfig(**config)
+            config = EnvironmentConfig.from_dict(config)
         self.config = config
         
         # Instance tracking
