@@ -2,6 +2,8 @@
 
 This project uses the Stable Baselines 3 reinforcement learning library to train an agent to play Pokemon Pinball.
 
+<img src="https://github.com/Baekalfen/PyBoy/blob/master/extras/README/pinball.gif" width="480">
+
 ## Overview
 
 Pokemon Pinball RL uses deep reinforcement learning to play Pokemon Pinball. The system:
