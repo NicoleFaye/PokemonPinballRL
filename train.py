@@ -219,7 +219,7 @@ def make_env(rank, env_conf, seed=0):
     def _init():
         env = PokemonPinballEnv("./roms/pokemon_pinball.gbc", env_conf)
         env = Monitor(env)
-        wrappers.FrameStack(env, env_conf['frame_stack'])
+        env = wrappers.FrameStack(env, env_conf['frame_stack'])
         if env_conf['clip_reward'] is not None:
             env = wrappers.ClipReward(env, env_conf['reward_clip_min'], env_conf['reward_clip_max'])
         if env_conf['normalize_reward']:
