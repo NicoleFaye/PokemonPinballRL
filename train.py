@@ -80,8 +80,6 @@ def create_argument_parser():
                           choices=['screen', 'game_area'], help='Visual observation mode')
     env_group.add_argument('--max-episode-frames', type=int, default=0, 
                           help='Max frames per episode')
-    env_group.add_argument('--no-frame-stack-extra-observation', dest='frame_stack_extra_observation', 
-                          action='store_false', help='Disable extra obs')
     env_group.add_argument('--no-reduce-screen-resolution', dest='reduce_screen_resolution', 
                           action='store_false', help='Disable screen downsample')
     env_group.add_argument('--clip-reward', '--clip_reward', dest='clip_reward', 
@@ -128,7 +126,6 @@ def create_env_config(args):
         'frame_stack': args.frame_stack,
         'frame_skip': args.frame_skip,
         'visual_mode': args.visual_mode,
-        'frame_stack_extra_observation': args.frame_stack_extra_observation,
         'reduce_screen_resolution': args.reduce_screen_resolution,
         'max_episode_frames': args.max_episode_frames,
         'episode_mode': args.episode_mode,
