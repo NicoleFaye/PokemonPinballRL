@@ -38,6 +38,8 @@ def make_env(rank, env_conf, seed=0):
             env = wrappers.ClipReward(env, env_conf['reward_clip_min'], env_conf['reward_clip_max'])
         if env_conf['normalize_reward']:
             env = wrappers.NormalizeReward(env)
+        if env_conf['max_episode_frames'] > 0:
+            env = wrappers.TimeLimit(env, max_episode_steps=env_conf['max_episode_frames'])
         env.reset(seed=(seed + rank))
         return env
     set_random_seed(seed)
