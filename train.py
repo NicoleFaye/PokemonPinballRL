@@ -220,9 +220,9 @@ def make_env(rank, env_conf, seed=0):
         env = PokemonPinballEnv("./roms/pokemon_pinball.gbc", env_conf)
         env = Monitor(env)
         env = wrappers.FlattenObservation(env)
-        env = wrappers.FrameStack(env, env_conf['frame_stack'])
-        #if env_conf['clip_reward'] is not None:
-        #    env = wrappers.ClipReward(env, env_conf['reward_clip_min'], env_conf['reward_clip_max'])
+        env = wrappers.FrameStackObservation(env, env_conf['frame_stack'])
+        if env_conf['clip_reward'] is not None:
+            env = wrappers.ClipReward(env, env_conf['reward_clip_min'], env_conf['reward_clip_max'])
         if env_conf['normalize_reward']:
             env = wrappers.NormalizeReward(env)
         if env_conf['max_episode_frames'] > 0:
