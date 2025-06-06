@@ -48,7 +48,7 @@ def create_argument_parser():
                                help='Final learning rate fraction')
     training_group.add_argument('--final-clip-range-fraction', type=float, default=0.1, 
                                help='Final clip range fraction')
-    training_group.add_argument('--policy', type=str, default='MultiInputPolicy', 
+    training_group.add_argument('--policy', type=str, default='MlpPolicy', 
                                help='PPO policy')
     training_group.add_argument('--max-grad-norm', '--max_grad_norm', type=float, default=0.5, 
                                help='Max gradient norm for clipping')
