@@ -18,7 +18,9 @@ import pufferlib.emulation
 import pufferlib.postprocess
 import pufferlib.cleanrl
 import pufferlib.models
-import pufferlib.pytorch
+
+# Import the clean PufferLib training implementation
+import clean_pufferl
 
 
 def create_argument_parser():
@@ -204,311 +206,6 @@ def create_env_config(args):
     }
 
 
-def compute_gae(rewards, values, dones, gamma=0.99, gae_lambda=0.95):
-    """Compute Generalized Advantage Estimation."""
-    advantages = np.zeros_like(rewards)
-    gae = 0
-    
-    for t in reversed(range(len(rewards))):
-        if t == len(rewards) - 1:
-            next_non_terminal = 0.0  # Assume terminal
-            next_value = 0.0
-        else:
-            next_non_terminal = 1.0 - dones[t + 1]
-            next_value = values[t + 1]
-        
-        delta = rewards[t] + gamma * next_value * next_non_terminal - values[t]
-        gae = delta + gamma * gae_lambda * next_non_terminal * gae
-        advantages[t] = gae
-    
-    returns = advantages + values
-    return advantages, returns
-
-
-class PPOTrainer:
-    """PPO Trainer using PufferLib components."""
-    
-    def __init__(self, config, vecenv, policy, optimizer=None, wandb=None):
-        self.config = config
-        self.vecenv = vecenv
-        self.policy = policy
-        self.wandb = wandb
-        
-        # Set up optimizer
-        self.optimizer = optimizer or torch.optim.Adam(
-            policy.parameters(), lr=config.learning_rate, eps=1e-5
-        )
-        
-        # Training state
-        self.global_step = 0
-        self.epoch = 0
-        self.start_time = None
-        
-        # Storage for rollouts
-        self.batch_size = config.batch_size
-        self.num_envs = vecenv.num_agents
-        self.num_steps = config.batch_size // self.num_envs
-        
-        # Initialize storage tensors
-        self.obs = torch.zeros((self.num_steps, self.num_envs) + vecenv.single_observation_space.shape, 
-                              dtype=torch.uint8).to(config.device)
-        self.actions = torch.zeros((self.num_steps, self.num_envs), dtype=torch.long).to(config.device)
-        self.logprobs = torch.zeros((self.num_steps, self.num_envs)).to(config.device)
-        self.rewards = torch.zeros((self.num_steps, self.num_envs)).to(config.device)
-        self.dones = torch.zeros((self.num_steps, self.num_envs)).to(config.device)
-        self.values = torch.zeros((self.num_steps, self.num_envs)).to(config.device)
-        
-        # Environment state
-        self.next_obs = None
-        self.next_done = torch.zeros(self.num_envs).to(config.device)
-        
-        print(f"PPO Trainer initialized:")
-        print(f"  Batch size: {self.batch_size}")
-        print(f"  Num envs: {self.num_envs}")
-        print(f"  Steps per env: {self.num_steps}")
-        print(f"  Model parameters: {sum(p.numel() for p in policy.parameters()):,}")
-    
-    def collect_rollouts(self):
-        """Collect a batch of rollouts from the environments."""
-        # Initialize if needed
-        if self.next_obs is None:
-            self.next_obs = torch.tensor(self.vecenv.reset()[0]).to(self.config.device)
-            self.start_time = time.time()
-        
-        # Collect rollouts
-        for step in range(self.num_steps):
-            self.global_step += self.num_envs
-            
-            # Store current observations
-            self.obs[step] = self.next_obs
-            self.dones[step] = self.next_done
-            
-            # Get action from policy
-            with torch.no_grad():
-                # Convert to float and normalize
-                obs_input = self.next_obs.float() / 255.0
-                action, logprob, _, value = self.policy.get_action_and_value(obs_input)
-                self.values[step] = value.flatten()
-                
-            self.actions[step] = action
-            self.logprobs[step] = logprob
-            
-            # Execute actions
-            obs, reward, done, truncated, info = self.vecenv.step(action.cpu().numpy())
-            
-            # Store transitions
-            self.rewards[step] = torch.tensor(reward).to(self.config.device).view(-1)
-            self.next_obs = torch.tensor(obs).to(self.config.device)
-            self.next_done = torch.tensor(np.logical_or(done, truncated)).to(self.config.device)
-    
-    def compute_advantages(self):
-        """Compute advantages and returns using GAE."""
-        with torch.no_grad():
-            # Get value of next observation
-            next_obs_input = self.next_obs.float() / 255.0
-            next_value = self.policy.get_value(next_obs_input).reshape(1, -1)
-            
-            # Convert to numpy for GAE computation
-            rewards_np = self.rewards.cpu().numpy()
-            values_np = self.values.cpu().numpy()
-            dones_np = self.dones.cpu().numpy()
-            
-            # Add next value to values for GAE computation
-            values_with_next = np.concatenate([values_np, next_value.cpu().numpy()], axis=0)
-            
-            # Compute GAE
-            advantages = np.zeros_like(rewards_np)
-            gae = 0
-            
-            for t in reversed(range(self.num_steps)):
-                next_non_terminal = 1.0 - dones_np[t]
-                next_value = values_with_next[t + 1]
-                delta = rewards_np[t] + self.config.gamma * next_value * next_non_terminal - values_np[t]
-                gae = delta + self.config.gamma * self.config.gae_lambda * next_non_terminal * gae
-                advantages[t] = gae
-            
-            returns = advantages + values_np
-            
-            # Convert back to tensors
-            self.advantages = torch.tensor(advantages).to(self.config.device)
-            self.returns = torch.tensor(returns).to(self.config.device)
-    
-    def update_policy(self):
-        """Update the policy using PPO."""
-        # Flatten batch dimensions
-        b_obs = self.obs.reshape(-1, *self.vecenv.single_observation_space.shape)
-        b_logprobs = self.logprobs.reshape(-1)
-        b_actions = self.actions.reshape(-1)
-        b_advantages = self.advantages.reshape(-1)
-        b_returns = self.returns.reshape(-1)
-        b_values = self.values.reshape(-1)
-        
-        # Normalize advantages
-        if self.config.norm_adv:
-            b_advantages = (b_advantages - b_advantages.mean()) / (b_advantages.std() + 1e-8)
-        
-        # Training loop
-        batch_indices = np.arange(self.batch_size)
-        
-        for epoch in range(self.config.update_epochs):
-            np.random.shuffle(batch_indices)
-            
-            for start in range(0, self.batch_size, self.config.minibatch_size):
-                end = start + self.config.minibatch_size
-                mb_indices = batch_indices[start:end]
-                
-                # Get minibatch
-                mb_obs = b_obs[mb_indices]
-                mb_actions = b_actions[mb_indices]
-                mb_logprobs = b_logprobs[mb_indices]
-                mb_advantages = b_advantages[mb_indices]
-                mb_returns = b_returns[mb_indices]
-                mb_values = b_values[mb_indices]
-                
-                # Forward pass
-                obs_input = mb_obs.float() / 255.0
-                _, newlogprob, entropy, newvalue = self.policy.get_action_and_value(
-                    obs_input, mb_actions
-                )
-                
-                # Compute losses
-                logratio = newlogprob - mb_logprobs
-                ratio = logratio.exp()
-                
-                # Policy loss
-                pg_loss1 = -mb_advantages * ratio
-                pg_loss2 = -mb_advantages * torch.clamp(
-                    ratio, 1 - self.config.clip_coef, 1 + self.config.clip_coef
-                )
-                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-                
-                # Value loss
-                newvalue = newvalue.view(-1)
-                if self.config.clip_vloss:
-                    v_loss_unclipped = (newvalue - mb_returns) ** 2
-                    v_clipped = mb_values + torch.clamp(
-                        newvalue - mb_values,
-                        -self.config.vf_clip_coef,
-                        self.config.vf_clip_coef,
-                    )
-                    v_loss_clipped = (v_clipped - mb_returns) ** 2
-                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                    v_loss = 0.5 * v_loss_max.mean()
-                else:
-                    v_loss = 0.5 * ((newvalue - mb_returns) ** 2).mean()
-                
-                entropy_loss = entropy.mean()
-                loss = pg_loss - self.config.ent_coef * entropy_loss + v_loss * self.config.vf_coef
-                
-                # Backward pass
-                self.optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(self.policy.parameters(), self.config.max_grad_norm)
-                self.optimizer.step()
-        
-        # Learning rate annealing
-        if self.config.anneal_lr:
-            frac = 1.0 - self.global_step / self.config.total_timesteps
-            lrnow = frac * self.config.learning_rate
-            self.optimizer.param_groups[0]["lr"] = lrnow
-        
-        # Compute explained variance
-        y_pred = self.values.cpu().numpy().flatten()
-        y_true = self.returns.cpu().numpy().flatten()
-        var_y = np.var(y_true)
-        explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
-        
-        return {
-            'policy_loss': pg_loss.item(),
-            'value_loss': v_loss.item(),
-            'entropy': entropy_loss.item(),
-            'explained_variance': explained_var,
-            'learning_rate': self.optimizer.param_groups[0]["lr"],
-        }
-    
-    def train_step(self):
-        """Perform one training step."""
-        # Collect rollouts
-        self.collect_rollouts()
-        
-        # Compute advantages
-        self.compute_advantages()
-        
-        # Update policy
-        metrics = self.update_policy()
-        
-        self.epoch += 1
-        return metrics
-    
-    def log_metrics(self, metrics):
-        """Log training metrics."""
-        if self.start_time is None:
-            return
-            
-        # Calculate SPS
-        elapsed_time = time.time() - self.start_time
-        sps = self.global_step / elapsed_time if elapsed_time > 0 else 0
-        
-        # Print progress
-        if self.epoch % 10 == 0:
-            print(f"Epoch {self.epoch} | Step {self.global_step:,} | SPS {sps:.0f}")
-            print(f"  Policy Loss: {metrics['policy_loss']:.4f}")
-            print(f"  Value Loss: {metrics['value_loss']:.4f}")
-            print(f"  Entropy: {metrics['entropy']:.4f}")
-            print(f"  Explained Var: {metrics['explained_variance']:.4f}")
-            print(f"  Learning Rate: {metrics['learning_rate']:.6f}")
-            print()
-        
-        # WandB logging
-        if self.wandb is not None:
-            self.wandb.log({
-                'charts/learning_rate': metrics['learning_rate'],
-                'charts/SPS': sps,
-                'charts/global_step': self.global_step,
-                'charts/epoch': self.epoch,
-                'losses/policy_loss': metrics['policy_loss'],
-                'losses/value_loss': metrics['value_loss'],
-                'losses/entropy': metrics['entropy'],
-                'losses/explained_variance': metrics['explained_variance'],
-            }, step=self.global_step)
-    
-    def save_checkpoint(self, path):
-        """Save training checkpoint."""
-        checkpoint = {
-            'model_state_dict': self.policy.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'epoch': self.epoch,
-            'global_step': self.global_step,
-            'config': self.config,
-        }
-        torch.save(checkpoint, path)
-        print(f"Checkpoint saved: {path}")
-    
-    def close(self):
-        """Clean up resources."""
-        self.vecenv.close()
-        if self.wandb is not None:
-            self.wandb.finish()
-    """Calculate the flattened output size after CNN layers."""
-    h, w = input_shape[:2]
-    
-    # Conv layer calculations for standard Atari CNN:
-    # Conv1: kernel=8, stride=4 -> output = (input - 8) // 4 + 1
-    # Conv2: kernel=4, stride=2 -> output = (input - 4) // 2 + 1  
-    # Conv3: kernel=3, stride=1 -> output = input - 3 + 1
-    
-    h1 = (h - 8) // 4 + 1
-    w1 = (w - 8) // 4 + 1
-    
-    h2 = (h1 - 4) // 2 + 1
-    w2 = (w1 - 4) // 2 + 1
-    
-    h3 = h2 - 3 + 1
-    w3 = w2 - 3 + 1
-    
-    # Final output: h3 * w3 * 64 (64 channels from last conv layer)
-    flat_size = h3 * w3 * 64
-    
 def calculate_cnn_output_size(input_shape, frame_stack):
     """Calculate the flattened output size after CNN layers."""
     h, w = input_shape[:2]
@@ -597,7 +294,7 @@ def setup_session_paths(args):
 
 
 def main():
-    """Main training function using PufferLib with custom PPO trainer."""
+    """Main training function using PufferLib with CleanRL."""
     # Parse arguments
     parser = create_argument_parser()
     args = parser.parse_args()
@@ -616,20 +313,17 @@ def main():
     # Set up experiment tracking
     wandb = init_wandb(args)
     
-    print(f"Starting Pokemon Pinball CNN Training with PufferLib")
-    print(f"Experiment ID: {exp_id}")
-    print(f"Device: {args.device}")
-    print(f"Environments: {args.num_envs}")
-    print(f"Workers: {args.num_workers}")
-    print(f"Total timesteps: {args.total_timesteps:,}")
-    print(f"CNN Hidden size: {args.cnn_hidden_size}")
-    print(f"Frame stack: {args.frame_stack}")
-    print(f"Visual mode: {args.visual_mode}")
-    print(f"Reward mode: {args.reward_mode}")
+    print(f"🎮 Starting Pokemon Pinball CNN Training with PufferLib")
+    print(f"🔬 Experiment ID: {exp_id}")
+    print(f"🖥️  Device: {args.device}")
+    print(f"🏭 Environments: {args.num_envs}")
+    print(f"👷 Workers: {args.num_workers}")
+    print(f"🎯 Total timesteps: {args.total_timesteps:,}")
+    print(f"🧠 CNN Hidden size: {args.cnn_hidden_size}")
+    print(f"🎞️  Frame stack: {args.frame_stack}")
+    print(f"📺 Visual mode: {args.visual_mode}")
+    print(f"🎲 Reward mode: {args.reward_mode}")
     print()
-    
-    # Seed everything
-    pufferlib.utils.seed_everything(args.seed, args.torch_deterministic)
     
     # Create vectorized environments using PufferLib
     env_creator = make_pokemon_env(env_config, args.rom_path)
@@ -644,7 +338,7 @@ def main():
     else:
         raise ValueError(f'Invalid --vec choice: {args.vec}')
     
-    print(f"Creating {args.num_envs} environments with {args.vec} backend...")
+    print(f"🚀 Creating {args.num_envs} environments with {args.vec} backend...")
     vecenv = pufferlib.vector.make(
         env_creator,
         env_kwargs={},  # env_config is baked into the creator
@@ -656,7 +350,7 @@ def main():
     )
     
     # Create policy
-    print("Creating CNN policy...")
+    print("🧠 Creating CNN policy...")
     policy = make_policy(vecenv.driver_env, args)
     
     # Create training configuration
@@ -697,47 +391,34 @@ def main():
         checkpoint_interval=args.checkpoint_interval,
     )
     
-    # Create trainer
-    print("Initializing PPO trainer...")
-    trainer = PPOTrainer(train_config, vecenv, policy, wandb=wandb)
+    # Create training data structure
+    print("⚙️  Initializing training system...")
+    data = clean_pufferl.create(train_config, vecenv, policy, wandb=wandb)
     
-    # Create checkpoint directory
-    checkpoint_dir = Path(train_config.data_dir) / exp_id
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    
-    print("Starting training loop...")
+    print(f"📊 Model size: {clean_pufferl.count_params(policy):,} parameters")
+    print("🚀 Starting training loop...")
     print()
     
     # Main training loop
     try:
-        while trainer.global_step < train_config.total_timesteps:
-            # Perform training step
-            metrics = trainer.train_step()
+        while data.global_step < train_config.total_timesteps:
+            # Collect experience
+            stats, infos = clean_pufferl.evaluate(data)
             
-            # Log metrics
-            trainer.log_metrics(metrics)
-            
-            # Save checkpoint
-            if trainer.epoch % train_config.checkpoint_interval == 0:
-                checkpoint_path = checkpoint_dir / f"checkpoint_{trainer.epoch:06d}.pt"
-                trainer.save_checkpoint(checkpoint_path)
+            # Train the model
+            clean_pufferl.train(data)
             
     except KeyboardInterrupt:
-        print("\nTraining interrupted by user")
+        print("\n⏹️  Training interrupted by user")
     except Exception as e:
-        print(f"\nTraining failed with error: {e}")
+        print(f"\n❌ Training failed with error: {e}")
         raise
     finally:
-        # Save final checkpoint
-        final_checkpoint = checkpoint_dir / "final_checkpoint.pt"
-        trainer.save_checkpoint(final_checkpoint)
-        
         # Clean up
-        print("Closing environments...")
-        trainer.close()
-        print("Training completed!")
+        print("💾 Closing environments and saving final checkpoint...")
+        clean_pufferl.close(data)
+        print("✅ Training completed!")
 
 
 if __name__ == "__main__":
-    import time
     main()
