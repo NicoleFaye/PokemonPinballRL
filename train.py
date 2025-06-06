@@ -95,6 +95,8 @@ def create_argument_parser():
     parallel_group = parser.add_argument_group('Parallel Environments')
     parallel_group.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=24, 
                                help='Number of parallel environments')
+    training_group.add_argument('--device', type=str, default='auto', 
+                               choices=['auto', 'cpu', 'cuda'], help='Device to use for training')
     
     # Logging and runtime
     logging_group = parser.add_argument_group('Logging and Runtime')
@@ -287,6 +289,7 @@ def create_or_resume_model(args, env, sess_path, lr_schedule, clip_range_schedul
             learning_rate=lr_schedule, max_grad_norm=args.max_grad_norm,
             target_kl=args.target_kl, vf_coef=args.vf_coef,
             normalize_advantage=args.normalize_advantage,
+            device=args.device,
         )
         model.set_logger(configure(str(sess_path), ["stdout", "tensorboard"]))
         train_target = time_steps
