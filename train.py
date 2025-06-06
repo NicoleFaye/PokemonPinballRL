@@ -95,8 +95,8 @@ def create_argument_parser():
     parallel_group = parser.add_argument_group('Parallel Environments')
     parallel_group.add_argument('--num-cpu', '--n-envs', '--n_envs', type=int, default=24, 
                                help='Number of parallel environments')
-    training_group.add_argument('--device', type=str, default='auto', 
-                               choices=['auto', 'cpu', 'cuda'], help='Device to use for training')
+    training_group.add_argument('--device', type=str, default='cpu', 
+                               choices=['cpu', 'cuda'], help='Device to use for training')
     
     # Logging and runtime
     logging_group = parser.add_argument_group('Logging and Runtime')
