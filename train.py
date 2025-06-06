@@ -342,7 +342,6 @@ def main():
     # Save final model
     final_model_path = sess_path / "poke_final"
     model.save(str(final_model_path))
-    env.save(str(final_model_path) + "_vecnormalize.pkl")
 
     # Clean up WandB if used
     if not args.no_wandb:
