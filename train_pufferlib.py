@@ -19,7 +19,7 @@ import pufferlib.emulation
 import pufferlib.models
 
 # Import your custom modules
-from pokemon_pinball_env import PokemonPinballEnv, EnvironmentConfig
+from pokemon_pinball_env import PokemonPinballEnv, EnvironmentConfig, RenderWrapper
 import clean_pufferl
 
 
@@ -29,8 +29,8 @@ def make_pokemon_env(config_dict):
         rom_path = config_dict.get('rom_path', './roms/pokemon_pinball.gbc')
         env_config = EnvironmentConfig.from_dict(config_dict)
         env = PokemonPinballEnv(rom_path, env_config)
-        
-        # Wrap with PufferLib emulation layer (required for vectorization)
+        env = RenderWrapper(env, headless=env_config.headless)
+        env = pufferlib.postprocess.EpisodeStats(env)
         return pufferlib.emulation.GymnasiumPufferEnv(env=env, buf=buf)
     return _make
 
