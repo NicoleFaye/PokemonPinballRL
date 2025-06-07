@@ -164,11 +164,13 @@ class PokemonPinballPolicy(torch.nn.Module):
 
 def make_pokemon_env(config_dict):
     """Create a Pokemon Pinball environment"""
-    def _make():
+    def _make(buf=None, **kwargs):  # Accept buf parameter and any other kwargs
         rom_path = config_dict.get('rom_path', './roms/pokemon_pinball.gbc')
         env_config = EnvironmentConfig.from_dict(config_dict)
         env = PokemonPinballEnv(rom_path, env_config)
-        return env
+        
+        # Wrap with PufferLib emulation layer (required for vectorization)
+        return pufferlib.emulation.GymnasiumPufferEnv(env=env, buf=buf)
     return _make
 
 
