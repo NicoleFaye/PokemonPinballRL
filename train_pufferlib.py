@@ -15,6 +15,7 @@ from datetime import datetime
 import pufferlib
 import pufferlib.vector
 import pufferlib.utils
+import pufferlib.emulation
 
 # Import your custom modules
 from pokemon_pinball_env import PokemonPinballEnv, EnvironmentConfig
