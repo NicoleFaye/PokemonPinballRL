@@ -10,6 +10,9 @@ from gymnasium import spaces
 from pyboy import PyBoy
 from pyboy.plugins.game_wrapper_pokemon_pinball import Stage, BallType, SpecialMode, Maps, Pokemon
 from rewards import RewardShaping
+import functools
+import pufferlib.emulation
+import pufferlib.postprocess
 
 
 # Build mappings between enums and sequential indices
@@ -42,13 +45,13 @@ class EnvironmentConfig:
     debug: bool = False
     headless: bool = False
     reward_shaping: str = "comprehensive"
-    info_level: int = 1
+    info_level: int = 0
     frame_skip: int = 4
     visual_mode: str = "screen"  # "screen" or "game_area"
     reduce_screen_resolution: bool = True
     episode_mode: str = "life"  # "life", "ball", or "game", where ball triggers even if the ball saver is active
     reset_condition: str = "game"  # "life", "ball", or "game"
-    num_agents: int = 1
+    num_agents: int = 8
 
     @classmethod
     def from_dict(cls, config_dict):
@@ -299,7 +302,28 @@ class InfoBuilder:
             info['high_score'] = [True]
             
         return info
+    
+def env_creator(name='pokemon_pinball'):
+    return functools.partial(make, name)
 
+def make(name, headless: bool = True, state_path=None, buf=None):
+    '''Pokemon Pinball'''
+    config = EnvironmentConfig(headless=headless)
+    env = PokemonPinballEnv(config)
+    env = RenderWrapper(env)
+    env = pufferlib.postprocess.EpisodeStats(env)
+    return pufferlib.emulation.GymnasiumPufferEnv(env=env, buf=buf)
+
+class RenderWrapper(gym.Wrapper):
+    def __init__(self, env):
+        self.env = env
+
+    @property
+    def render_mode(self):
+        return 'rgb_array'
+
+    def render(self):
+        return self.env.screen.screen_ndarray()
 
 class PokemonPinballEnv(gym.Env):
     """Pokemon Pinball environment for reinforcement learning."""
