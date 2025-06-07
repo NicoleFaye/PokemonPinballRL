@@ -302,17 +302,6 @@ class InfoBuilder:
             info['high_score'] = [True]
             
         return info
-    
-def env_creator(name='pokemon_pinball'):
-    return functools.partial(make, name)
-
-def make(name, headless: bool = True, state_path=None, buf=None):
-    '''Pokemon Pinball'''
-    config = EnvironmentConfig(headless=headless)
-    env = PokemonPinballEnv(config)
-    env = RenderWrapper(env)
-    env = pufferlib.postprocess.EpisodeStats(env)
-    return pufferlib.emulation.GymnasiumPufferEnv(env=env, buf=buf)
 
 class RenderWrapper(gym.Wrapper):
     def __init__(self, env):
