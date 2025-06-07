@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pokemon Pinball training script using PufferLib
+Pokemon Pinball training script using PufferLib with default policy
 """
 import os
 import sys
@@ -16,156 +16,16 @@ import pufferlib
 import pufferlib.vector
 import pufferlib.utils
 import pufferlib.emulation
+import pufferlib.models
 
 # Import your custom modules
 from pokemon_pinball_env import PokemonPinballEnv, EnvironmentConfig
 import clean_pufferl
 
 
-class PokemonPinballPolicy(torch.nn.Module):
-    """Simple CNN-based policy for Pokemon Pinball"""
-    
-    def __init__(self, env, hidden_size=512, cnn_channels=[32, 64, 64]):
-        super().__init__()
-        
-        # Get observation space info
-        obs_space = env.single_observation_space
-        if hasattr(obs_space, 'spaces'):
-            # Dict observation space - use visual representation
-            visual_shape = obs_space['visual_representation'].shape
-            self.use_dict_obs = True
-        else:
-            # Single observation space
-            visual_shape = obs_space.shape
-            self.use_dict_obs = False
-            
-        self.action_space = env.single_action_space
-        
-        # CNN for visual processing
-        channels = visual_shape[0] if len(visual_shape) == 3 else 1
-        height, width = visual_shape[-2:]
-        
-        layers = []
-        in_channels = channels
-        for out_channels in cnn_channels:
-            layers.extend([
-                torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1),
-                torch.nn.ReLU(),
-            ])
-            in_channels = out_channels
-            
-        self.cnn = torch.nn.Sequential(*layers)
-        
-        # Calculate CNN output size
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, channels, height, width)
-            cnn_out = self.cnn(dummy_input)
-            cnn_output_size = cnn_out.numel()
-        
-        # Additional feature processing for dict observations
-        if self.use_dict_obs:
-            # Ball position and velocity (4 features)
-            # Game state features (varies by info_level)
-            additional_features = 10  # Estimate based on typical info_level
-            total_input_size = cnn_output_size + additional_features
-        else:
-            total_input_size = cnn_output_size
-            
-        # Shared network
-        self.shared = torch.nn.Sequential(
-            torch.nn.Linear(total_input_size, hidden_size),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_size, hidden_size),
-            torch.nn.ReLU(),
-        )
-        
-        # Policy and value heads
-        self.actor = torch.nn.Linear(hidden_size, self.action_space.n)
-        self.critic = torch.nn.Linear(hidden_size, 1)
-        
-    def forward(self, obs, state=None, action=None):
-        if self.use_dict_obs:
-            if isinstance(obs, dict):
-                visual = obs['visual_representation']
-                additional_features = []
-                
-                # Add ball features if available
-                if 'ball_x' in obs:
-                    additional_features.extend([
-                        obs['ball_x'], obs['ball_y'],
-                        obs['ball_x_velocity'], obs['ball_y_velocity']
-                    ])
-                
-                # Add game state features if available
-                if 'current_stage' in obs:
-                    additional_features.extend([
-                        obs['current_stage'], obs['ball_type'],
-                        obs['special_mode'], obs['special_mode_active'],
-                        obs['saver_active']
-                    ])
-                    
-                if 'pikachu_saver_charge' in obs:
-                    additional_features.append(obs['pikachu_saver_charge'])
-                    
-            else:
-                # Flattened observation - assume visual comes first
-                batch_size = obs.shape[0]
-                visual_size = np.prod(self.cnn_input_shape)
-                visual = obs[:, :visual_size].reshape(batch_size, *self.cnn_input_shape)
-                additional_features = obs[:, visual_size:]
-        else:
-            visual = obs
-            additional_features = []
-        
-        # Process visual input
-        if len(visual.shape) == 3:
-            visual = visual.unsqueeze(0)
-        elif len(visual.shape) == 4 and visual.shape[1] != 1:
-            # Convert from HWC to CHW if needed
-            visual = visual.permute(0, 3, 1, 2)
-        
-        # Ensure single channel for grayscale
-        if visual.shape[1] == 3:
-            visual = torch.mean(visual, dim=1, keepdim=True)
-        elif visual.shape[1] != 1:
-            visual = visual.unsqueeze(1)
-            
-        cnn_features = self.cnn(visual.float() / 255.0)
-        cnn_features = cnn_features.flatten(start_dim=1)
-        
-        # Combine features
-        if self.use_dict_obs and len(additional_features) > 0:
-            if isinstance(additional_features, list):
-                additional_features = torch.cat(additional_features, dim=-1)
-            features = torch.cat([cnn_features, additional_features.float()], dim=-1)
-        else:
-            features = cnn_features
-            
-        # Shared processing
-        shared_features = self.shared(features)
-        
-        # Policy and value outputs
-        logits = self.actor(shared_features)
-        value = self.critic(shared_features)
-        
-        if action is None:
-            # Sampling action
-            dist = torch.distributions.Categorical(logits=logits)
-            action = dist.sample()
-            logprob = dist.log_prob(action)
-            entropy = dist.entropy()
-            return action, logprob, entropy, value
-        else:
-            # Computing logprob for given action
-            dist = torch.distributions.Categorical(logits=logits)
-            logprob = dist.log_prob(action)
-            entropy = dist.entropy()
-            return action, logprob, entropy, value
-
-
 def make_pokemon_env(config_dict):
     """Create a Pokemon Pinball environment"""
-    def _make(buf=None, **kwargs):  # Accept buf parameter and any other kwargs
+    def _make(buf=None, **kwargs):
         rom_path = config_dict.get('rom_path', './roms/pokemon_pinball.gbc')
         env_config = EnvironmentConfig.from_dict(config_dict)
         env = PokemonPinballEnv(rom_path, env_config)
@@ -236,10 +96,11 @@ def create_argument_parser():
     
     # Policy arguments
     policy_group = parser.add_argument_group('Policy')
+    policy_group.add_argument('--policy-type', type=str, default='default',
+                            choices=['default', 'convolutional'], 
+                            help='Type of policy to use')
     policy_group.add_argument('--hidden-size', type=int, default=512,
                             help='Hidden layer size')
-    policy_group.add_argument('--cnn-channels', type=int, nargs='+', default=[32, 64, 64],
-                            help='CNN channel sizes')
     
     # Logging and checkpoints
     logging_group = parser.add_argument_group('Logging')
@@ -330,11 +191,34 @@ def create_config_from_args(args):
     
     # Policy config
     policy_config = {
+        'policy_type': args.policy_type,
         'hidden_size': args.hidden_size,
-        'cnn_channels': args.cnn_channels,
     }
     
     return env_config, train_config, policy_config
+
+
+def create_policy(env, policy_config):
+    """Create policy based on configuration"""
+    policy_type = policy_config['policy_type']
+    hidden_size = policy_config['hidden_size']
+    
+    if policy_type == 'default':
+        # Use PufferLib's default policy - works with any observation space
+        policy = pufferlib.models.Default(env, hidden_size=hidden_size)
+    elif policy_type == 'convolutional':
+        # Use PufferLib's convolutional policy for image observations
+        policy = pufferlib.models.Convolutional(
+            env, 
+            input_size=hidden_size, 
+            hidden_size=hidden_size,
+            framestack=1,
+            flat_size=hidden_size  # Will be calculated automatically
+        )
+    else:
+        raise ValueError(f"Unknown policy type: {policy_type}")
+    
+    return policy
 
 
 def init_wandb(args, train_config):
@@ -373,6 +257,7 @@ def main():
     print(f"Environments: {train_config.num_envs}")
     print(f"Workers: {train_config.num_workers}")
     print(f"Total timesteps: {train_config.total_timesteps:,}")
+    print(f"Policy type: {policy_config['policy_type']}")
     
     # Initialize WandB
     wandb_run = init_wandb(args, train_config)
@@ -387,8 +272,8 @@ def main():
         backend=pufferlib.vector.Multiprocessing,  # or Serial for debugging
     )
     
-    # Create policy
-    policy = PokemonPinballPolicy(vecenv.driver_env, **policy_config)
+    # Create policy using PufferLib's built-in policies
+    policy = create_policy(vecenv.driver_env, policy_config)
     policy = policy.to(train_config.device)
     
     print(f"Policy parameters: {sum(p.numel() for p in policy.parameters() if p.requires_grad):,}")
