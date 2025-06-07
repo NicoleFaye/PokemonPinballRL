@@ -48,6 +48,7 @@ class EnvironmentConfig:
     reduce_screen_resolution: bool = True
     episode_mode: str = "life"  # "life", "ball", or "game", where ball triggers even if the ball saver is active
     reset_condition: str = "game"  # "life", "ball", or "game"
+    num_agents: int = 1
 
     @classmethod
     def from_dict(cls, config_dict):
@@ -318,6 +319,7 @@ class PokemonPinballEnv(gym.Env):
         self.config = config
 
         self.emulated = True
+        self.num_agents = config.num_agents
         
         # Instance tracking
         PokemonPinballEnv.instance_count += 1
