@@ -29,7 +29,7 @@ def make_pokemon_env(config_dict):
         rom_path = config_dict.get('rom_path', './roms/pokemon_pinball.gbc')
         env_config = EnvironmentConfig.from_dict(config_dict)
         env = PokemonPinballEnv(rom_path, env_config)
-        env = RenderWrapper(env, headless=env_config.headless)
+        env = RenderWrapper(env)
         env = pufferlib.postprocess.EpisodeStats(env)
         return pufferlib.emulation.GymnasiumPufferEnv(env=env, buf=buf)
     return _make
