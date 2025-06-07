@@ -316,6 +316,8 @@ class PokemonPinballEnv(gym.Env):
         if isinstance(config, dict):
             config = EnvironmentConfig.from_dict(config)
         self.config = config
+
+        self.emulated = True
         
         # Instance tracking
         PokemonPinballEnv.instance_count += 1
