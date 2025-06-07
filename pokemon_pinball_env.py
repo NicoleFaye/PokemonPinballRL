@@ -305,7 +305,7 @@ class InfoBuilder:
 
 class RenderWrapper(gym.Wrapper):
     def __init__(self, env):
-        self.env = env
+        super().__init__(env)  # This is crucial!
 
     @property
     def render_mode(self):
