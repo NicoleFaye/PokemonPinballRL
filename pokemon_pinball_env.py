@@ -331,8 +331,8 @@ class PokemonPinballEnv(gym.Env):
             config = EnvironmentConfig.from_dict(config)
         self.config = config
 
-        self.emulated = True
-        self.num_agents = config.num_agents
+        #self.emulated = True
+        #self.num_agents = config.num_agents
         
         # Instance tracking
         PokemonPinballEnv.instance_count += 1
