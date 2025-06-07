@@ -187,7 +187,7 @@ def create_argument_parser():
     env_group.add_argument('--reward-shaping', type=str, default='comprehensive',
                           choices=['basic', 'catch_focused', 'comprehensive', 'progressive'],
                           help='Reward shaping mode')
-    env_group.add_argument('--info-level', type=int, default=2, choices=[0, 1, 2, 3],
+    env_group.add_argument('--info-level', type=int, default=0, choices=[0, 1, 2, 3],
                           help='Information level in observations')
     env_group.add_argument('--visual-mode', type=str, default='screen',
                           choices=['screen', 'game_area'], help='Visual observation mode')
@@ -200,7 +200,7 @@ def create_argument_parser():
     
     # Training arguments
     train_group = parser.add_argument_group('Training')
-    train_group.add_argument('--num-envs', type=int, default=64,
+    train_group.add_argument('--num-envs', type=int, default=8,
                            help='Number of parallel environments')
     train_group.add_argument('--num-workers', type=int, default=8,
                            help='Number of worker processes')
