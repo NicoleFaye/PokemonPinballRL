@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pokemon Pinball training script using PufferLib with default policy
+Pokemon Pinball training script using PufferLib
 """
 import os
 import sys
@@ -17,29 +17,57 @@ import pufferlib.vector
 import pufferlib.utils
 import pufferlib.emulation
 import pufferlib.models
+import pufferlib.cleanrl
 
-# Import your custom modules
 from pokemon_pinball_env import PokemonPinballEnv, EnvironmentConfig, RenderWrapper
 import clean_pufferl
 
 
 def make_pokemon_env(config_dict):
-    """Create a Pokemon Pinball environment"""
-    def _make(buf=None, **kwargs):
+    """Create a Pokemon Pinball environment factory."""
+    def _make(**kwargs):
         rom_path = config_dict.get('rom_path', './roms/pokemon_pinball.gbc')
         env_config = EnvironmentConfig.from_dict(config_dict)
         env = PokemonPinballEnv(rom_path, env_config)
         env = RenderWrapper(env)
         env = pufferlib.postprocess.EpisodeStats(env)
-        return pufferlib.emulation.GymnasiumPufferEnv(env=env, buf=buf)
+        return pufferlib.emulation.GymnasiumPufferEnv(env=env)
     return _make
 
 
+def make_policy(env, policy_cls, rnn_cls, args):
+    """Create and wrap policy with PufferLib's cleanrl wrappers."""
+    policy = policy_cls(env, **args['policy'])
+    if rnn_cls is not None:
+        policy = rnn_cls(env, policy, **args['rnn'])
+        policy = pufferlib.cleanrl.RecurrentPolicy(policy)
+    else:
+        policy = pufferlib.cleanrl.Policy(policy)
+
+    return policy.to(args['train']['device'])
+
+
+def init_wandb(args, name, id=None, resume=True):
+    """Initialize Weights & Biases logging."""
+    import wandb
+    wandb.init(
+        id=id or wandb.util.generate_id(),
+        project=args['wandb_project'],
+        group=args['wandb_group'],
+        allow_val_change=True,
+        save_code=True,
+        resume=resume,
+        config=args,
+        name=name,
+    )
+    return wandb
+
+
 def create_argument_parser():
-    """Create argument parser for Pokemon Pinball training"""
+    """Create command line argument parser."""
     parser = argparse.ArgumentParser(description='Train Pokemon Pinball with PufferLib')
     
-    # Environment arguments
+    # Environment configuration
     env_group = parser.add_argument_group('Environment')
     env_group.add_argument('--rom-path', type=str, default='./roms/pokemon_pinball.gbc',
                           help='Path to Pokemon Pinball ROM')
@@ -61,7 +89,7 @@ def create_argument_parser():
     env_group.add_argument('--headless', action='store_true',
                           help='Run without rendering')
     
-    # Training arguments
+    # Training hyperparameters
     train_group = parser.add_argument_group('Training')
     train_group.add_argument('--num-envs', type=int, default=8,
                            help='Number of parallel environments')
@@ -94,15 +122,20 @@ def create_argument_parser():
     train_group.add_argument('--device', type=str, default='cuda',
                            choices=['cpu', 'cuda'], help='Device to use')
     
-    # Policy arguments
+    # Policy configuration
     policy_group = parser.add_argument_group('Policy')
-    policy_group.add_argument('--policy-type', type=str, default='default',
-                            choices=['default', 'convolutional'], 
-                            help='Type of policy to use')
     policy_group.add_argument('--hidden-size', type=int, default=512,
                             help='Hidden layer size')
     
-    # Logging and checkpoints
+    # Vectorization settings
+    vector_group = parser.add_argument_group('Vectorization')
+    vector_group.add_argument('--vec', type=str, default='multiprocessing',
+                            choices=['serial', 'multiprocessing', 'ray', 'native'],
+                            help='Vectorization backend')
+    vector_group.add_argument('--vec-overwork', action='store_true',
+                            help='Allow vectorization to use >1 worker/core')
+    
+    # Logging and experiment tracking
     logging_group = parser.add_argument_group('Logging')
     logging_group.add_argument('--track', action='store_true',
                              help='Track with WandB')
@@ -112,27 +145,19 @@ def create_argument_parser():
                              help='WandB group name')
     logging_group.add_argument('--exp-id', type=str, default=None,
                              help='Experiment ID (for resuming)')
-    logging_group.add_argument('--checkpoint-interval', type=int, default=100,
-                             help='Checkpoint save interval')
-    logging_group.add_argument('--data-dir', type=str, default='./experiments',
-                             help='Data directory for checkpoints')
     
-    # Misc
+    # Miscellaneous
     misc_group = parser.add_argument_group('Misc')
     misc_group.add_argument('--seed', type=int, default=42,
                           help='Random seed')
-    misc_group.add_argument('--compile', action='store_true',
-                          help='Use torch.compile')
-    misc_group.add_argument('--compile-mode', type=str, default='default',
-                          help='Torch compile mode')
     
     return parser
 
 
 def create_config_from_args(args):
-    """Create configuration dictionaries from parsed arguments"""
+    """Create nested configuration structure from command line arguments."""
     
-    # Environment config
+    # Environment configuration
     env_config = {
         'rom_path': args.rom_path,
         'episode_mode': args.episode_mode,
@@ -144,141 +169,101 @@ def create_config_from_args(args):
         'reduce_screen_resolution': args.reduce_screen_resolution,
         'headless': args.headless,
         'debug': False,
+        'num_agents': args.num_envs,
     }
     
-    # Training config
-    train_config = pufferlib.namespace(
-        env='pokemon_pinball',
-        exp_id=args.exp_id or f'pokemon-pinball-{str(uuid.uuid4())[:8]}',
-        seed=args.seed,
-        torch_deterministic=True,
-        device=args.device,
+    # Training configuration
+    train_config = {
+        'seed': args.seed,
+        'torch_deterministic': True,
+        'device': args.device,
         
-        # Training hyperparameters
-        total_timesteps=args.total_timesteps,
-        batch_size=args.batch_size,
-        minibatch_size=args.minibatch_size,
-        bptt_horizon=args.bptt_horizon,
-        learning_rate=args.learning_rate,
-        gamma=args.gamma,
-        gae_lambda=args.gae_lambda,
-        update_epochs=args.update_epochs,
-        clip_coef=args.clip_coef,
-        ent_coef=args.ent_coef,
-        vf_coef=args.vf_coef,
-        max_grad_norm=args.max_grad_norm,
-        norm_adv=True,
-        clip_vloss=True,
-        vf_clip_coef=0.1,
-        target_kl=None,
-        anneal_lr=True,
+        # Environment parallelization
+        'num_envs': args.num_envs,
+        'num_workers': args.num_workers,
+        'env_batch_size': args.num_envs // args.num_workers,
+        'zero_copy': True,
         
-        # Vectorization
-        num_envs=args.num_envs,
-        num_workers=args.num_workers,
-        env_batch_size=args.num_envs // args.num_workers,
-        zero_copy=True,
-        
-        # Technical
-        compile=args.compile,
-        compile_mode=args.compile_mode,
-        cpu_offload=False,
-        
-        # Checkpointing
-        checkpoint_interval=args.checkpoint_interval,
-        data_dir=args.data_dir,
-    )
+        # PPO hyperparameters
+        'total_timesteps': args.total_timesteps,
+        'batch_size': args.batch_size,
+        'minibatch_size': args.minibatch_size,
+        'bptt_horizon': args.bptt_horizon,
+        'learning_rate': args.learning_rate,
+        'gamma': args.gamma,
+        'gae_lambda': args.gae_lambda,
+        'update_epochs': args.update_epochs,
+        'clip_coef': args.clip_coef,
+        'ent_coef': args.ent_coef,
+        'vf_coef': args.vf_coef,
+        'vf_clip_coef': 0.1,
+        'max_grad_norm': args.max_grad_norm,
+        'norm_adv': True,
+        'clip_vloss': True,
+        'target_kl': None,
+        'anneal_lr': True,
+    }
     
-    # Policy config
+    # Policy configuration
     policy_config = {
-        'policy_type': args.policy_type,
         'hidden_size': args.hidden_size,
     }
     
-    return env_config, train_config, policy_config
-
-
-def create_policy(env, policy_config):
-    """Create policy based on configuration"""
-    policy_type = policy_config['policy_type']
-    hidden_size = policy_config['hidden_size']
+    # Main configuration structure
+    config = {
+        'env': env_config,
+        'train': train_config,
+        'policy': policy_config,
+        'rnn': {},  # Empty for non-recurrent policies
+        'vec': args.vec,
+        'vec_overwork': args.vec_overwork,
+        'wandb_project': args.wandb_project,
+        'wandb_group': args.wandb_group,
+        'exp_id': args.exp_id,
+        'track': args.track,
+    }
     
-    if policy_type == 'default':
-        # Use PufferLib's default policy - works with any observation space
-        policy = pufferlib.models.Default(env, hidden_size=hidden_size)
-    elif policy_type == 'convolutional':
-        # Use PufferLib's convolutional policy for image observations
-        policy = pufferlib.models.Convolutional(
-            env, 
-            input_size=hidden_size, 
-            hidden_size=hidden_size,
-            framestack=1,
-            flat_size=hidden_size  # Will be calculated automatically
-        )
+    return config
+
+
+def train(args, make_env, policy_cls, rnn_cls, wandb_run):
+    """Execute the main training loop."""
+    
+    # Configure vectorization backend
+    if args['vec'] == 'serial':
+        vec = pufferlib.vector.Serial
+    elif args['vec'] == 'multiprocessing':
+        vec = pufferlib.vector.Multiprocessing
+    elif args['vec'] == 'ray':
+        vec = pufferlib.vector.Ray
+    elif args['vec'] == 'native':
+        vec = pufferlib.environment.PufferEnv
     else:
-        raise ValueError(f"Unknown policy type: {policy_type}")
-    
-    return policy
+        raise ValueError(f'Invalid --vec ({args["vec"]}). Use serial/multiprocessing/ray/native.')
 
-
-def init_wandb(args, train_config):
-    """Initialize Weights & Biases logging"""
-    if not args.track:
-        return None
-        
-    wandb.init(
-        project=args.wandb_project,
-        group=args.wandb_group,
-        name=train_config.exp_id,
-        config={
-            'env': vars(args),  # Environment config
-            'train': dict(train_config),  # Training config
-        },
-        save_code=True,
-    )
-    return wandb
-
-
-def main():
-    """Main training function"""
-    # Parse arguments
-    parser = create_argument_parser()
-    args = parser.parse_args()
-    
-    # Create configurations
-    env_config, train_config, policy_config = create_config_from_args(args)
-    
-    # Set up paths
-    os.makedirs(train_config.data_dir, exist_ok=True)
-    
-    print(f"Starting Pokemon Pinball training with PufferLib")
-    print(f"Experiment ID: {train_config.exp_id}")
-    print(f"Device: {train_config.device}")
-    print(f"Environments: {train_config.num_envs}")
-    print(f"Workers: {train_config.num_workers}")
-    print(f"Total timesteps: {train_config.total_timesteps:,}")
-    print(f"Policy type: {policy_config['policy_type']}")
-    
-    # Initialize WandB
-    wandb_run = init_wandb(args, train_config)
-    
     # Create vectorized environment
     vecenv = pufferlib.vector.make(
-        make_pokemon_env(env_config),
-        num_envs=train_config.num_envs,
-        num_workers=train_config.num_workers,
-        batch_size=train_config.env_batch_size,
-        zero_copy=train_config.zero_copy,
-        backend=pufferlib.vector.Multiprocessing,  # or Serial for debugging
+        make_env,
+        env_kwargs=args['env'],
+        num_envs=args['train']['num_envs'],
+        num_workers=args['train']['num_workers'],
+        batch_size=args['train']['env_batch_size'],
+        zero_copy=args['train']['zero_copy'],
+        overwork=args['vec_overwork'],
+        backend=vec,
     )
-    
-    # Create policy using PufferLib's built-in policies
-    policy = create_policy(vecenv.driver_env, policy_config)
-    policy = policy.to(train_config.device)
+
+    # Create and initialize policy
+    policy = make_policy(vecenv.driver_env, policy_cls, rnn_cls, args)
     
     print(f"Policy parameters: {sum(p.numel() for p in policy.parameters() if p.requires_grad):,}")
     
-    # Create training data structure
+    # Create training configuration namespace
+    env_name = 'pokemon_pinball'
+    train_config = pufferlib.namespace(**args['train'], env=env_name,
+        exp_id=args['exp_id'] or env_name + '-' + str(uuid.uuid4())[:8])
+    
+    # Initialize training data structure
     data = clean_pufferl.create(train_config, vecenv, policy, wandb=wandb_run)
     
     try:
@@ -293,9 +278,43 @@ def main():
         print(f"\nTraining failed with error: {e}")
         raise
     finally:
-        # Clean up
+        # Cleanup resources
         clean_pufferl.close(data)
         print(f"\nTraining completed! Final steps: {data.global_step:,}")
+
+
+def main():
+    """Main entry point for Pokemon Pinball training."""
+    # Parse command line arguments
+    parser = create_argument_parser()
+    args = parser.parse_args()
+    
+    # Create configuration structure
+    config = create_config_from_args(args)
+    
+    # Print training configuration
+    print(f"Starting Pokemon Pinball training with PufferLib")
+    print(f"Experiment ID: {config['exp_id'] or 'auto-generated'}")
+    print(f"Device: {config['train']['device']}")
+    print(f"Environments: {config['train']['num_envs']}")
+    print(f"Workers: {config['train']['num_workers']}")
+    print(f"Total timesteps: {config['train']['total_timesteps']:,}")
+    print(f"Vectorization: {config['vec']}")
+    
+    # Initialize experiment tracking
+    wandb_run = None
+    if config['track']:
+        wandb_run = init_wandb(config, 'pokemon_pinball', id=config['exp_id'])
+    
+    # Create environment factory
+    make_env = make_pokemon_env(config['env'])
+    
+    # Configure policy architecture
+    policy_cls = pufferlib.models.Default
+    rnn_cls = None  # No recurrent layers
+    
+    # Execute training
+    train(config, make_env, policy_cls, rnn_cls, wandb_run)
 
 
 if __name__ == '__main__':
