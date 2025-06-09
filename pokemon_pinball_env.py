@@ -305,7 +305,7 @@ class InfoBuilder:
 
 class RenderWrapper(gym.Wrapper):
     def __init__(self, env):
-        super().__init__(env)  # This is crucial!
+        super().__init__(env)
 
     @property
     def render_mode(self):
@@ -330,9 +330,6 @@ class PokemonPinballEnv(gym.Env):
         if isinstance(config, dict):
             config = EnvironmentConfig.from_dict(config)
         self.config = config
-
-        #self.emulated = True
-        #self.num_agents = config.num_agents
         
         # Instance tracking
         PokemonPinballEnv.instance_count += 1
@@ -451,6 +448,10 @@ class PokemonPinballEnv(gym.Env):
     
     def _execute_action(self, action: int):
         """Execute the given action."""
+        # Ensure action is an integer
+        if isinstance(action, np.ndarray):
+            action = action.item() if action.ndim == 0 else action[0]
+        
         action_release_delay = math.ceil((1 + self.config.frame_skip) / 2)
         
         action_map = {
@@ -488,6 +489,10 @@ class PokemonPinballEnv(gym.Env):
     
     def step(self, action):
         """Take a step in the environment."""
+        # Convert action to integer if it's an array (PufferLib compatibility)
+        if isinstance(action, np.ndarray):
+            action = action.item() if action.ndim == 0 else action[0]
+        
         assert self.action_space.contains(action), f"{action} ({type(action)}) invalid"
         
         # Save current state before taking action
