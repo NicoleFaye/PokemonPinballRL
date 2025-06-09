@@ -150,6 +150,10 @@ def create_argument_parser():
     misc_group = parser.add_argument_group('Misc')
     misc_group.add_argument('--seed', type=int, default=42,
                           help='Random seed')
+    misc_group.add_argument('--compile', action='store_true',
+                          help='Use torch.compile for optimization')
+    misc_group.add_argument('--compile-mode', type=str, default='default',
+                          help='Torch compile mode')
     
     return parser
 
@@ -186,6 +190,8 @@ def create_config_from_args(args):
         
         # Technical settings
         'cpu_offload': False,
+        'compile': args.compile,
+        'compile_mode': args.compile_mode,
         
         # PPO hyperparameters
         'total_timesteps': args.total_timesteps,
