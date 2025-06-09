@@ -184,6 +184,9 @@ def create_config_from_args(args):
         'env_batch_size': args.num_envs // args.num_workers,
         'zero_copy': True,
         
+        # Technical settings
+        'cpu_offload': False,
+        
         # PPO hyperparameters
         'total_timesteps': args.total_timesteps,
         'batch_size': args.batch_size,
