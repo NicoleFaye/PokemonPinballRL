@@ -11,7 +11,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList,
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
 from gymnasium import wrappers
-from pokemon_pinball_env import PokemonPinballEnv
+from pokemon_pinball_gym import PokemonPinballEnv, rewards, utils
 
 
 def create_argument_parser():
