@@ -1,7 +1,5 @@
 # Pokemon Pinball RL
 
-> **⚠️ Work in Progress**: This project is currently under active development. Features and APIs may change without notice. Use at your own discretion for research and experimentation.
-
 This project uses the Stable Baselines 3 reinforcement learning library to train an agent to play Pokemon Pinball using the [Pokemon Pinball Gym](https://github.com/NicoleFaye/pokemon-pinball-gym) environment.
 
 ## Example RL agent Gameplay
